@@ -138,12 +138,12 @@ set +a
 | `IBKR_PORT` | IB Gateway 埠 | `4002`（只接受模擬埠 4002 與 7497） |
 | `IBKR_CLIENT_ID` | API client id | `1` |
 | `IBKR_ACCOUNT` | 模擬帳戶代碼，有填時必須以 `DU` 開頭 | 空字串 |
-| `IBKR_PAPER_USERNAME` | 模擬帳戶登入名稱，只給 Gateway 使用 | 空字串 |
-| `IBKR_PAPER_PASSWORD` | 模擬帳戶登入密碼，只給 Gateway 使用 | 空字串 |
+| `IBKR_PAPER_USERNAME` | 模擬帳戶登入名稱，只給 Gateway 啟動腳本 | 空字串 |
+| `IBKR_PAPER_PASSWORD` | 模擬帳戶登入密碼，只給 Gateway 啟動腳本 | 空字串 |
 | `TRADING_HOME` | 意圖、提醒、風控快照的根目錄 | `/workspace/trading` |
 | `BASE_CURRENCY` | 基準幣別，`HKD` 或 `USD` | `HKD` |
 
-這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。登入只認上面兩個模擬帳戶變數。風控閘門是唯一會叫到券商 `place` 的路徑。`state/risk_limits.json` 用 `risk_limits/1.1`，`trading_scope` 固定為 `paper_only`。全停只能在本機解除，而且要明確加上 `--reset-hwm` 才會重設淨值高點。
+這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。交易程式不讀模擬帳戶登入名稱和密碼，只連接已經登入的 Gateway（預設 `127.0.0.1:4002`）。那兩個變數只由 `scripts/launch_ib_gateway.py` 讀取，寫進 IBC 設定。風控閘門是唯一會叫到券商 `place` 的路徑。每張單送出前會重讀 `state/risk_limits.json`（`risk_limits/1.1`），`trading_scope` 必須是 `paper_only`，而且雜湊必須和檔內 `limits` 以及核准向量一致，否則拒絕。全停只能在這台主機的互動終端解除，而且要明確加上 `--reset-hwm` 才會重設淨值高點。
 
 交易日誌寫在 `TRADING_HOME/data/trading.db`（SQLite WAL），並追加 JSONL 與每月 CSV。`trade why` 由成交追到意圖、訊號和策略雜湊。
 

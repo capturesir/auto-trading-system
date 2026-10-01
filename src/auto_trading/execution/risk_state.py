@@ -15,6 +15,10 @@ from typing import Any
 from auto_trading.risk.limits import EXPECTED_LIMITS, config_hash
 
 
+class RiskConfigMismatch(Exception):
+    """``state/risk_limits.json`` failed the paper-only hash check."""
+
+
 def build_risk_limits(
     *,
     now: datetime,
@@ -54,6 +58,30 @@ def build_risk_limits(
             }
         ],
     }
+
+
+def verify_risk_limits_file(trading_home: Path) -> dict[str, Any]:
+    """Re-read the file. Refuse unless the hash and the scope both match."""
+    path = trading_home / "state" / "risk_limits.json"
+    if not path.is_file():
+        raise RiskConfigMismatch("missing")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RiskConfigMismatch("unreadable") from exc
+    if payload.get("schema_version") != "risk_limits/1.1":
+        raise RiskConfigMismatch("schema")
+    if payload.get("trading_scope") != "paper_only":
+        raise RiskConfigMismatch("scope")
+    limits = payload.get("limits")
+    if not isinstance(limits, dict):
+        raise RiskConfigMismatch("limits")
+    digest = config_hash(limits)
+    if digest != payload.get("config_hash"):
+        raise RiskConfigMismatch("hash")
+    if digest != config_hash(EXPECTED_LIMITS):
+        raise RiskConfigMismatch("hash")
+    return limits
 
 
 def write_risk_limits(trading_home: Path, payload: dict[str, Any]) -> Path:

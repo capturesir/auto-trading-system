@@ -67,6 +67,31 @@ class TradeJournal:
                 BEGIN
                     SELECT RAISE(ABORT, 'audit_log is append-only');
                 END;
+                CREATE TABLE IF NOT EXISTS orders (
+                    order_id TEXT PRIMARY KEY,
+                    intent_id TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    symbol TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    UNIQUE (intent_id, seq)
+                );
+                CREATE TABLE IF NOT EXISTS order_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    order_id TEXT NOT NULL,
+                    ts_utc TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    detail_json TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS order_events_no_update
+                BEFORE UPDATE ON order_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'order_events is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS order_events_no_delete
+                BEFORE DELETE ON order_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'order_events is append-only');
+                END;
                 """
             )
 
@@ -149,6 +174,64 @@ class TradeJournal:
             conn.execute(
                 "INSERT INTO audit_log (ts_utc, action, detail_json) VALUES (?, ?, ?)",
                 (ts, action, json.dumps(detail, ensure_ascii=False)),
+            )
+
+    def create_order(self, *, order_id: str, intent_id: str, seq: int, symbol: str) -> None:
+        when = datetime.now(UTC)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO orders (order_id, intent_id, seq, symbol, state)
+                VALUES (?, ?, ?, ?, 'INTENT_RECEIVED')
+                """,
+                (order_id, intent_id, seq, symbol),
+            )
+        self._order_event(order_id, "INTENT_RECEIVED", when)
+
+    def order_state(self, order_id: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT state FROM orders WHERE order_id = ?",
+                (order_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["state"])
+
+    def set_order_state(self, order_id: str, state: str, *, when: datetime) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE orders SET state = ? WHERE order_id = ?",
+                (state, order_id),
+            )
+        self._order_event(order_id, state, when)
+
+    def order_events(self, order_id: str) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT state FROM order_events
+                WHERE order_id = ? ORDER BY id
+                """,
+                (order_id,),
+            ).fetchall()
+        return [str(row["state"]) for row in rows]
+
+    def unknown_orders(self) -> list[tuple[str, str]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT symbol, order_id FROM orders WHERE state = 'UNKNOWN'"
+            ).fetchall()
+        return [(str(row["symbol"]), str(row["order_id"])) for row in rows]
+
+    def _order_event(self, order_id: str, state: str, when: datetime) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO order_events (order_id, ts_utc, state, detail_json)
+                VALUES (?, ?, ?, '{}')
+                """,
+                (order_id, when.isoformat(timespec="seconds"), state),
             )
 
     def why(self, key: str) -> dict[str, Any]:

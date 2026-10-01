@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from auto_trading.broker import Balance, BrokerPosition, OrderAck, OrderIntent, OrderSide
-from auto_trading.config import Settings, require_paper_credentials
+from auto_trading.config import Settings
 from auto_trading.execution.approvals import (
     approve,
     hash12,
@@ -31,7 +35,8 @@ from auto_trading.risk import GateContext, Held, OpenOrder, Quote, RiskGate, Ris
 from auto_trading.risk.limits import HASH_ODD_LOT_OFF, config_hash
 
 HKT = timezone(timedelta(hours=8))
-NOW = datetime(2026, 10, 2, 10, 0, tzinfo=HKT)
+# 22:00 Macau is 10:00 New York, inside the US cash session.
+NOW = datetime(2026, 10, 2, 22, 0, tzinfo=HKT)
 
 
 class MockClient:
@@ -84,12 +89,29 @@ def _buy(**kwargs: object) -> OrderIntent:
 
 
 def _ctx(**kwargs: object) -> GateContext:
+    home = kwargs.pop("trading_home", None)
+    caller_now = "now" in kwargs
+    caller_quotes = "quotes" in kwargs
+    if home is None:
+        home = Path(tempfile.mkdtemp())
+    root = Path(home)
+    if not (root / "state" / "risk_limits.json").is_file():
+        write_risk_limits(root, build_risk_limits(now=NOW, nlv=1_000_000, account="DU1234567"))
     payload: dict = {
         "now": NOW,
-        "quotes": {"AAPL": Quote(last=100.0, as_of=NOW), "2330.TW": Quote(last=2445.0, as_of=NOW)},
-        "fx_to_base": {"TWD": 0.244, "HKD": 1.0, "USD": 1.0},
+        "trading_home": root,
+        "quotes": {
+            "AAPL": Quote(last=100.0, as_of=NOW),
+            "2330.TW": Quote(last=2445.0, as_of=NOW),
+        },
+        "fx_to_base": {"TWD": 0.244, "HKD": 1.0, "USD": 1.0, "JPY": 0.05},
     }
     payload.update(kwargs)
+    if caller_now and not caller_quotes:
+        moment = payload["now"]
+        payload["quotes"] = {
+            symbol: Quote(last=row.last, as_of=moment) for symbol, row in payload["quotes"].items()
+        }
     return GateContext(**payload)
 
 
@@ -170,8 +192,9 @@ def test_gate_rules_and_reapproval() -> None:
         limit_price=2445,
         lot_size=1000,
     )
+    tw_now = datetime(2026, 10, 2, 11, 0, tzinfo=HKT)
     with pytest.raises(RiskRejected, match="LOT_TOO_LARGE"):
-        RiskGate(_ctx()).allow(tw)
+        RiskGate(_ctx(now=tw_now)).allow(tw)
 
 
 def test_session_open_price_buffer_and_disaster_stop() -> None:
@@ -276,7 +299,7 @@ def test_journal_why_and_approval_and_heartbeat(tmp_path) -> None:
     assert breaks[0].broker_qty == 2 and breaks[0].journal_qty == 1
 
 
-def test_contract_maps_2330_and_credentials_stay_secret() -> None:
+def test_contract_maps_2330_and_credentials_stay_with_the_launcher(tmp_path, monkeypatch) -> None:
     tw = map_contract("2330.TW")
     assert tw.ib_symbol == "2330"
     assert tw.exchange == "TWSE"
@@ -289,21 +312,68 @@ def test_contract_maps_2330_and_credentials_stay_secret() -> None:
     assert otc.exchange == "TPEX"
     assert otc.market == "TW"
     assert otc.unverified is True
-    settings = Settings(ibkr_paper_password="sekret-value")
+    trading = Path("src/auto_trading/config.py").read_text(encoding="utf-8")
+    gateway = Path("src/auto_trading/execution/ibkr.py").read_text(encoding="utf-8")
+    assert "PAPER_USERNAME" not in trading
+    assert "PAPER_PASSWORD" not in trading
+    assert "PAPER_USERNAME" not in gateway
+    settings = Settings()
+    assert "ibkr_paper_username" not in Settings.model_fields
+    assert "ibkr_paper_password" not in Settings.model_fields
     assert "sekret-value" not in repr(settings)
+    launcher = _launcher()
+    monkeypatch.delenv("IBKR_PAPER_USERNAME", raising=False)
+    monkeypatch.delenv("IBKR_PAPER_PASSWORD", raising=False)
     with pytest.raises(RuntimeError, match="IBKR_PAPER_USERNAME"):
-        require_paper_credentials(Settings())
+        launcher.write_ibc_config(tmp_path / "missing.ini")
+    monkeypatch.setenv("IBKR_PAPER_USERNAME", "paper-user")
+    monkeypatch.setenv("IBKR_PAPER_PASSWORD", "sekret-value")
+    written = launcher.write_ibc_config(tmp_path / "ibc.ini")
+    text = written.read_text(encoding="utf-8")
+    assert "TradingMode=paper" in text
+    assert "OverrideTwsApiPort=4002" in text
+    assert "paper-user" in text
+    assert "sekret-value" in text
+    assert written.stat().st_mode & 0o777 == 0o600
+    assert "sekret-value" not in repr(Settings())
 
 
-def test_trade_cli_stop_and_local_resume(tmp_path) -> None:
+def _launcher():
+    spec = importlib.util.spec_from_file_location(
+        "launch_ib_gateway",
+        Path("scripts/launch_ib_gateway.py"),
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _tty(monkeypatch: pytest.MonkeyPatch, *, enabled: bool) -> None:
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: enabled)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: enabled)
+    for name in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_trade_cli_stop_and_local_resume(tmp_path, monkeypatch) -> None:
     from auto_trading.cli_trade import main
 
     main(["--home", str(tmp_path), "stop"])
     assert (tmp_path / "KILL_SWITCH").is_file()
     with pytest.raises(SystemExit):
         main(["--home", str(tmp_path), "resume"])
+    _tty(monkeypatch, enabled=False)
+    with pytest.raises(SystemExit):
+        main(["--home", str(tmp_path), "resume", "--local"])
+    _tty(monkeypatch, enabled=True)
     main(["--home", str(tmp_path), "resume", "--local"])
     assert not (tmp_path / "KILL_SWITCH").exists()
+    main(["--home", str(tmp_path), "stop"])
+    monkeypatch.setenv("SSH_CONNECTION", "203.0.113.4 22 198.51.100.8 4002")
+    with pytest.raises(SystemExit):
+        main(["--home", str(tmp_path), "resume", "--local"])
+    monkeypatch.delenv("SSH_CONNECTION", raising=False)
     account = {"nlv": 890_000, "hwm": 1_000_000, "day_start_nlv": 1_000_000}
     state = tmp_path / "state"
     state.mkdir(parents=True, exist_ok=True)
@@ -314,3 +384,116 @@ def test_trade_cli_stop_and_local_resume(tmp_path) -> None:
     main(["--home", str(tmp_path), "resume", "--local", "--reset-hwm"])
     saved = json.loads((state / "account.json").read_text(encoding="utf-8"))
     assert saved["hwm"] == 890_000
+
+
+def test_gate_rereads_risk_file_and_refuses_a_mismatch(tmp_path) -> None:
+    ctx = _ctx(trading_home=tmp_path)
+    assert RiskGate(ctx).allow(_buy()) is None
+    path = tmp_path / "state" / "risk_limits.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["trading_scope"] = "other"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RiskRejected, match="RISK_CONFIG_MISMATCH"):
+        RiskGate(ctx).allow(_buy())
+    payload["trading_scope"] = "paper_only"
+    payload["config_hash"] = "sha256:" + "ab" * 32
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(RiskRejected, match="RISK_CONFIG_MISMATCH"):
+        RiskGate(ctx).allow(_buy())
+    path.unlink()
+    with pytest.raises(RiskRejected, match="RISK_CONFIG_MISMATCH"):
+        RiskGate(ctx).allow(_buy())
+
+
+def test_currency_exposure_is_separate_from_market_exposure() -> None:
+    positions = [
+        Held("0700.HK", 100, 0.0, currency="USD", market_value_local=80_000),
+        Held("AAPL", 1, 0.0, currency="USD", market_value_local=1_000),
+    ]
+    ctx = _ctx(
+        positions=positions,
+        fx_to_base={"USD": 7.8, "HKD": 1.0, "JPY": 0.05, "TWD": 0.244},
+    )
+    with pytest.raises(RiskRejected, match="R5"):
+        RiskGate(ctx).allow(_buy(symbol="MSFT", quantity=10, limit_price=100, currency="USD"))
+
+
+def test_session_windows_block_entries_and_auctions() -> None:
+    from auto_trading.execution.sessions import session_window
+
+    us_open = datetime(2026, 10, 2, 21, 32, tzinfo=HKT)
+    assert session_window("US", us_open) == "open_buffer"
+    early = _buy()
+    with pytest.raises(RiskRejected, match="R10"):
+        RiskGate(_ctx(now=us_open)).allow(early)
+    sell = _buy(side=OrderSide.SELL, intent_type="EXIT", parent_intent_id="entry-1", quantity=1)
+    assert RiskGate(_ctx(now=us_open, positions=[Held("AAPL", 5, 500)])).allow(sell) is None
+    us_close = datetime(2026, 10, 3, 3, 55, tzinfo=HKT)
+    assert session_window("US", us_close) == "close_buffer"
+    with pytest.raises(RiskRejected, match="R10"):
+        RiskGate(_ctx(now=us_close)).allow(_buy())
+    lunch = datetime(2026, 10, 2, 12, 30, tzinfo=HKT)
+    assert session_window("HK", lunch) == "lunch"
+    assert session_window("JP", datetime(2026, 10, 2, 11, 0, tzinfo=HKT)) == "lunch"
+    auction = datetime(2026, 10, 2, 16, 5, tzinfo=HKT)
+    assert session_window("HK", auction) == "close_auction"
+    assert session_window("JP", datetime(2026, 10, 2, 14, 26, tzinfo=HKT)) == "close_auction"
+    assert session_window("TW", datetime(2026, 10, 2, 13, 27, tzinfo=HKT)) == "close_auction"
+    assert session_window("KR", datetime(2026, 10, 2, 14, 25, tzinfo=HKT)) == "close_auction"
+    assert session_window("KR", datetime(2026, 10, 2, 7, 40, tzinfo=HKT)) == "open_auction"
+    tw_mid = datetime(2026, 10, 2, 11, 0, tzinfo=HKT)
+    assert session_window("TW", tw_mid) == "continuous"
+    for market, moment in (
+        ("HK", lunch),
+        ("HK", auction),
+        ("JP", datetime(2026, 10, 2, 14, 26, tzinfo=HKT)),
+        ("TW", datetime(2026, 10, 2, 13, 27, tzinfo=HKT)),
+    ):
+        blocked = _buy(market=market, symbol="AAPL")
+        with pytest.raises(RiskRejected, match="R10"):
+            RiskGate(_ctx(now=moment)).allow(blocked)
+
+
+def test_order_ref_state_machine_and_unknown_reconciliation(tmp_path) -> None:
+    import sqlite3
+
+    from auto_trading.execution.oms import IllegalTransition, OrderMachine, OrderRefError, order_ref
+    from auto_trading.execution.sync import apply_recon
+
+    journal = TradeJournal(tmp_path)
+    machine = OrderMachine(journal)
+    first = machine.create(intent_id="intent-1", symbol="AAPL", seq=1)
+    assert first == order_ref("intent-1", 1)
+    with pytest.raises(OrderRefError):
+        machine.create(intent_id="intent-1", symbol="AAPL", seq=1)
+    for state in ("DRAFT", "PENDING_APPROVAL", "APPROVED", "SUBMITTING", "SUBMITTED", "UNKNOWN"):
+        machine.transition(first, state)
+    with pytest.raises(IllegalTransition):
+        machine.transition(first, "INTENT_RECEIVED")
+    assert "AAPL" in machine.unknown_symbols()
+    breaks = reconcile([], {}, unknown_orders=journal.unknown_orders())
+    assert breaks[0].kind == "UNKNOWN_ORDER"
+    assert breaks[0].symbol == "AAPL"
+    ctx = _ctx(trading_home=tmp_path)
+    apply_recon(ctx, breaks)
+    assert ctx.recon_ok is True
+    with pytest.raises(RiskRejected, match="UNKNOWN_ORDER"):
+        RiskGate(ctx).allow(_buy(intent_id="intent-9"))
+    other = _buy(symbol="MSFT", client_id="cid-msft", intent_id="intent-msft")
+    ctx.quotes["MSFT"] = Quote(last=100.0, as_of=ctx.now)
+    assert RiskGate(ctx).allow(other) is None
+    machine.transition(first, "FILLED")
+    assert machine.unknown_symbols() == frozenset()
+    ctx.unknown_symbols = frozenset()
+    ctx.order_refs = frozenset({order_ref("intent-2", 1)})
+    with pytest.raises(RiskRejected, match="R12"):
+        RiskGate(ctx).allow(_buy(intent_id="intent-2", client_id="cid-2"))
+    qty = reconcile(
+        [BrokerPosition(symbol="AAPL", quantity=2, average_price=1)],
+        {"AAPL": 1},
+    )
+    apply_recon(ctx, qty)
+    with pytest.raises(RiskRejected, match="R17"):
+        RiskGate(ctx).allow(_buy(client_id="cid-3", intent_id="intent-3"))
+    with journal._connect() as conn, pytest.raises(sqlite3.IntegrityError):
+        conn.execute("DELETE FROM order_events")

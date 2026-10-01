@@ -9,11 +9,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from auto_trading.broker import OrderIntent
 from auto_trading.execution.contracts import UnsupportedInstrument, map_contract
+from auto_trading.execution.oms import order_ref
 from auto_trading.execution.r0 import DU_ACCOUNT, PAPER_PORTS
+from auto_trading.execution.risk_state import RiskConfigMismatch, verify_risk_limits_file
+from auto_trading.execution.sessions import BLOCK_ALL, session_window
 from auto_trading.risk.limits import EXPECTED_LIMITS
 
 OPENING = frozenset({"ENTRY", "ADD"})
@@ -37,6 +41,7 @@ class OpenOrder:
     active: bool = True
     protective: bool = False
     opened_at: datetime | None = None
+    status: str = ""
 
 
 @dataclass
@@ -45,6 +50,8 @@ class Held:
     quantity: float
     market_value_base: float
     strategy_id: str | None = None
+    currency: str = ""
+    market_value_local: float | None = None
 
 
 @dataclass
@@ -94,6 +101,10 @@ class GateContext:
     reapproval_deviation: float = 0.015
     quote_stale_sec: int = 10
     r23_note: str | None = None
+    trading_home: Path | None = None
+    unknown_symbols: frozenset[str] = frozenset()
+    order_refs: frozenset[str] = frozenset()
+    order_seq: int = 1
 
 
 class RiskGate:
@@ -116,6 +127,9 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     code = _r0(intent, ctx)
     if code:
         return code
+    file_code = _risk_file(ctx)
+    if file_code:
+        return file_code
     if ctx.kill_switch:
         return "R18"
     if not ctx.connected or not ctx.recon_ok:
@@ -131,6 +145,13 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     market = _market(intent)
     if market is None:
         return "R26"
+    if intent.symbol in ctx.unknown_symbols or _unknown_order(ctx, intent.symbol):
+        return "UNKNOWN_ORDER"
+    if intent.intent_id and order_ref(intent.intent_id, ctx.order_seq) in ctx.order_refs:
+        return "R12"
+    window = session_window(market, ctx.now)
+    if window in BLOCK_ALL:
+        return "R10"
     held_qty = _position_qty(ctx, intent)
     orphan_exit = intent.intent_type in REDUCING and not intent.parent_intent_id
     if orphan_exit and not held_qty:
@@ -142,6 +163,8 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     if active:
         return "R11"
     reducing = intent.intent_type in REDUCING or intent.reduce_only or intent.protective
+    if not reducing and window in {"open_buffer", "close_buffer"}:
+        return "R10"
     if not reducing:
         opening = _opening_rules(intent, ctx, market)
         if opening:
@@ -250,21 +273,20 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
         return "R1"
     if notional > float(ctx.limits["R2_max_order_notional_base"]) + 1e-6:
         return "R2"
-    held = sum(row.market_value_base for row in ctx.positions if row.symbol == intent.symbol)
+    fx = ctx.fx_to_base
+    held = sum(_base_value(row, fx) for row in ctx.positions if row.symbol == intent.symbol)
     if held + notional > ctx.nlv * float(ctx.limits["R3_max_position_pct_nlv"]) + 1e-6:
         return "R3"
     market_cap = ctx.limits["R4_max_market_pct_nlv"][market]
-    market_held = sum(
-        row.market_value_base for row in ctx.positions if _symbol_market(row.symbol) == market
-    )
+    market_held = _market_exposure(ctx, market)
     if market_held + notional > ctx.nlv * float(market_cap) + 1e-6:
         return "R4"
     ccy_cap = ctx.limits["R5_max_ccy_pct_nlv"].get(currency)
     if ccy_cap is not None:
-        ccy_held = market_held
+        ccy_held = _currency_exposure(ctx, currency)
         if ccy_held + notional > ctx.nlv * float(ccy_cap) + 1e-6:
             return "R5"
-    gross = sum(row.market_value_base for row in ctx.positions)
+    gross = sum(_base_value(row, fx) for row in ctx.positions)
     if gross + notional > ctx.nlv * float(ctx.limits["R6_max_gross_exposure_pct_nlv"]) + 1e-6:
         return "R6"
     if ctx.limits["R7_require_cash_cover"] and notional > ctx.cash + 1e-6:
@@ -313,3 +335,48 @@ def _symbol_market(symbol: str) -> str:
         return map_contract(symbol).market
     except UnsupportedInstrument:
         return ""
+
+
+def _risk_file(ctx: GateContext) -> str | None:
+    """Re-read the published limits. Any mismatch refuses the order."""
+    if ctx.trading_home is None:
+        return "RISK_CONFIG_MISMATCH"
+    try:
+        ctx.limits = verify_risk_limits_file(ctx.trading_home)
+    except RiskConfigMismatch:
+        return "RISK_CONFIG_MISMATCH"
+    return None
+
+
+def _unknown_order(ctx: GateContext, symbol: str) -> bool:
+    return any(row.symbol == symbol and row.status == "UNKNOWN" for row in ctx.open_orders)
+
+
+def _held_currency(row: Held) -> str:
+    if row.currency:
+        return row.currency
+    try:
+        return map_contract(row.symbol).currency
+    except UnsupportedInstrument:
+        return ""
+
+
+def _base_value(row: Held, fx: dict[str, float]) -> float:
+    """Position value in HKD. Local currency is converted with ``fx``."""
+    if row.market_value_local is not None:
+        return row.market_value_local * fx.get(_held_currency(row), 1.0)
+    return row.market_value_base
+
+
+def _market_exposure(ctx: GateContext, market: str) -> float:
+    return sum(
+        _base_value(row, ctx.fx_to_base)
+        for row in ctx.positions
+        if _symbol_market(row.symbol) == market
+    )
+
+
+def _currency_exposure(ctx: GateContext, currency: str) -> float:
+    return sum(
+        _base_value(row, ctx.fx_to_base) for row in ctx.positions if _held_currency(row) == currency
+    )

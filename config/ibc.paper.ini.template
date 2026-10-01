@@ -1,0 +1,12 @@
+# Paper Gateway launcher template.
+# The trading process does not read this file. scripts/launch_ib_gateway.py
+# fills the two login placeholders and writes a mode-0600 copy for IBC.
+# TradingMode stays paper. The API port stays 4002.
+
+TradingMode=paper
+IbLoginId=__IBKR_PAPER_USERNAME__
+IbPassword=__IBKR_PAPER_PASSWORD__
+OverrideTwsApiPort=4002
+ReadOnlyApi=no
+AcceptIncomingConnectionAction=accept
+ExistingSessionDetectedAction=primary

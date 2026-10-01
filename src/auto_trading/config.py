@@ -1,7 +1,8 @@
 """Runtime configuration.
 
-Broker credentials and other secrets are read only from the process
-environment. This module does not load a ``.env`` file.
+Host, port, and the expected account come from the process environment.
+This module does not load a ``.env`` file and does not read Gateway login
+names. Those belong to the separate IBC launcher.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_SIGNALS_PATH = Path("/workspace/invest/signals.json")
@@ -45,8 +46,6 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("IBKR_ACCOUNT", "IB_ACCOUNT"),
     )
-    ibkr_paper_username: str = ""
-    ibkr_paper_password: SecretStr = SecretStr("")
     trading_home: Path = Field(default=DEFAULT_TRADING_HOME)
     base_currency: Literal["HKD", "USD"] = "HKD"
 
@@ -64,14 +63,6 @@ class Settings(BaseSettings):
         if value and not value.startswith("DU"):
             raise ValueError("account refused: paper_only, expected account must start with DU")
         return value
-
-
-def require_paper_credentials(settings: Settings) -> None:
-    """Fail closed before a real Gateway connect. Values are never included."""
-    username = settings.ibkr_paper_username
-    password = settings.ibkr_paper_password.get_secret_value()
-    if not username or not password:
-        raise RuntimeError("missing IBKR_PAPER_USERNAME or IBKR_PAPER_PASSWORD")
 
 
 @lru_cache(maxsize=1)

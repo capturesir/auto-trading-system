@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from datetime import UTC
 from pathlib import Path
 
@@ -42,10 +44,20 @@ def pause(home: Path) -> None:
     (folder / "paused").write_text("paused\n", encoding="utf-8")
 
 
+def interactive_local_session() -> None:
+    """Raise unless this process is an interactive terminal on the host itself."""
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise PermissionError("kill switch requires an interactive terminal on the host")
+    remote = ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")
+    if any(os.environ.get(name) for name in remote):
+        raise PermissionError("kill switch requires an interactive terminal on the host")
+
+
 def resume(home: Path, *, reset_hwm: bool, local_terminal: bool) -> str:
-    """Clear the kill switch. Refuses a remote caller and a halt that is still on."""
+    """Clear the kill switch. Refuses a remote or non-interactive caller."""
     if not local_terminal:
         raise PermissionError("kill switch can only be reset locally")
+    interactive_local_session()
     account = _account(home)
     hwm = float(account.get("hwm") or 0)
     nlv = float(account.get("nlv") or 0)

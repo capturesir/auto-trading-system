@@ -20,7 +20,7 @@ from auto_trading.broker import (
     OrderIntent,
     OrderState,
 )
-from auto_trading.config import Settings, require_paper_credentials
+from auto_trading.config import Settings
 from auto_trading.execution.contracts import map_contract
 from auto_trading.execution.r0 import AccountGuard, latch_kill_switch
 from auto_trading.execution.stops import cancel_keeps_protective
@@ -127,7 +127,11 @@ class IbkrBroker:
 
 
 class PaperGateway:
-    """Real ``ib_async`` session. Not constructed by tests or CI."""
+    """Real ``ib_async`` session. Not constructed by tests or CI.
+
+    Connects to a Gateway that is already logged in. Login names are not
+    read here; the IBC launcher is the only reader of those variables.
+    """
 
     def __init__(self, settings: Settings, *, client_id: int) -> None:
         self.settings = settings
@@ -135,7 +139,6 @@ class PaperGateway:
         self._ib: Any = None
 
     async def connect(self) -> list[str]:
-        require_paper_credentials(self.settings)
         from ib_async import IB
 
         ib = IB()
