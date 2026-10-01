@@ -1,0 +1,26 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2020-01-01T08:00:00+08:00",
+  "generated_by": "投資經理 (A組)",
+  "price_date": "2019-12-31",
+  "signals": [
+    {
+      "signal_id": "20200101-7203.T",
+      "ticker": "7203.T",
+      "market": "JP",
+      "name": "トヨタ自動車",
+      "asset_type": "equity",
+      "currency": "JPY",
+      "side": "SELL",
+      "confidence": 40,
+      "fair_value": 1800,
+      "market_price": 2000,
+      "price_date": "2019-12-31",
+      "upside_pct": -10.0,
+      "horizon": "6-12m",
+      "rationale": "已過期的範例訊號",
+      "report_path": "/workspace/invest/reports/expired.md",
+      "expires_at": "2020-01-02T08:00:00+08:00"
+    }
+  ]
+}

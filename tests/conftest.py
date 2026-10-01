@@ -1,0 +1,36 @@
+"""Shared fixtures. Settings are rebuilt from a cleaned environment."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from auto_trading.config import get_settings
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+ENV_VARS = (
+    "SIGNALS_PATH",
+    "IBKR_HOST",
+    "IBKR_PORT",
+    "IBKR_CLIENT_ID",
+    "IBKR_ACCOUNT",
+    "IBKR_PAPER",
+    "DATABASE_PATH",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolated_env(monkeypatch: pytest.MonkeyPatch):
+    for name in ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture
+def valid_payload() -> dict:
+    return json.loads((FIXTURES / "valid.json").read_text(encoding="utf-8"))
