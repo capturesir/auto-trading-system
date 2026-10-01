@@ -1,8 +1,8 @@
 """Moving averages, Wilder RSI, population Bollinger bands, and Wilder ATR.
 
 Indicators use adjusted closes. Quantity, fees, limits, and fair value use
-raw prices, which the caller keeps separate. ``compute`` remains a live
-quote placeholder and does not fetch data.
+raw prices, which the caller keeps separate. ``compute`` remains a live quote
+placeholder and does not fetch data.
 """
 
 from __future__ import annotations
@@ -117,5 +117,5 @@ def ma_slope_up(closes: list[float], period: int, lookback: int) -> bool:
 
 
 def compute(symbol: str, timeframe: str) -> None:
-    """Placeholder for a live indicator snapshot. It does not call a broker."""
+    """Placeholder for a current indicator snapshot. It does not call a broker."""
     raise NotImplementedError("technical indicators are not implemented yet")

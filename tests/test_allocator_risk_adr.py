@@ -9,7 +9,7 @@ import pytest
 from auto_trading.backtest.adr import AdrMapping, consider_adr
 from auto_trading.backtest.allocator import Proposal, allocate
 from auto_trading.backtest.risk_sim import RiskSimulator, fill_rejections
-from auto_trading.strategy.sizing import live_multiplier, live_notional_ok, target_fraction
+from auto_trading.strategy.sizing import target_fraction
 
 NLV = 1_000_000.0
 
@@ -109,7 +109,7 @@ def test_reset_and_never_scenarios() -> None:
     assert never.hwm == 100
 
 
-def test_v2_weights_and_live_cap() -> None:
+def test_v2_weights() -> None:
     trend = target_fraction(
         {"type": "risk_pct", "value": 0.5, "max_position_pct": 5.0},
         stop_distance_pct=8,
@@ -127,10 +127,6 @@ def test_v2_weights_and_live_cap() -> None:
     assert pullback == pytest.approx(0.04)
     news = target_fraction({"type": "pct_equity", "value": 3.0, "max_position_pct": 5.0})
     assert news == 0.03
-    table = {"default": 0.10, "max": 0.10, "by_strategy": {"sig_trend.v2": 0.10}}
-    assert live_multiplier(table, "sig_trend.v2") == 0.10
-    assert live_notional_ok(500, 0.10, NLV, 0.05, 200_000)
-    assert live_notional_ok(10_000, 0.10, NLV, 0.05, 200_000) is False
 
 
 def test_adr_cases() -> None:

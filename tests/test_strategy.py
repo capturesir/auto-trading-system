@@ -45,7 +45,7 @@ def test_matching_hash_is_approved() -> None:
 
 def test_mode_is_not_part_of_the_hash() -> None:
     edited = dict(DOCUMENT)
-    edited["mode"] = "live"
+    edited["mode"] = "disabled"
 
     assert spec_hash(edited) == spec_hash(DOCUMENT)
     assert require_approved(edited, _approved()) == spec_hash(DOCUMENT)

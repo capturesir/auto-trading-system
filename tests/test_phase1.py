@@ -167,7 +167,7 @@ def test_parent_links_and_risk_filter(tmp_path: Path) -> None:
         "strategy_version": 2,
         "spec_hash": "sha256:" + "11" * 32,
         "mode": "paper",
-        "live_size_multiplier": 0.10,
+        "live_size_multiplier": None,
         "base_currency": "HKD",
         "generated_at": "2026-10-02T07:05:00+08:00",
         "intents": [

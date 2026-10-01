@@ -33,20 +33,3 @@ def target_fraction(
     if isinstance(cap, int | float):
         weight = min(weight, float(cap) / 100)
     return weight
-
-
-def live_multiplier(table: Mapping[str, object], strategy_key: str) -> float:
-    """Resolve ``m`` from ``live_size_multiplier``. ``m`` cannot exceed ``max``."""
-    default = float(table.get("default", 0.10))  # type: ignore[arg-type]
-    ceiling = float(table.get("max", 0.10))  # type: ignore[arg-type]
-    by_strategy = table.get("by_strategy")
-    chosen = default
-    if isinstance(by_strategy, Mapping) and strategy_key in by_strategy:
-        chosen = float(by_strategy[strategy_key])  # type: ignore[arg-type]
-    return min(chosen, ceiling)
-
-
-def live_notional_ok(notional: float, multiplier: float, nlv: float, r1: float, r2: float) -> bool:
-    """Live ENTRY/ADD notional must be ≤ m × min(NLV × R1, R2) × 1.02."""
-    cap = multiplier * min(nlv * r1, r2) * 1.02
-    return notional <= cap + 1e-6

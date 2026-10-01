@@ -3,7 +3,8 @@
 A strategy runs only when the canonical hash of its document matches the
 hash a person approved. The hash is SHA-256 of sorted-key JSON with the
 top-level ``mode`` removed, prefixed by ``sha256:``. Changing ``mode`` does
-not change the hash. Any other edit does, and needs a new approval.
+not change the hash, but the only accepted modes are paper and disabled.
+Any other edit needs a new approval.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from auto_trading.jsonutil import mapping_without_mode, sha256_prefixed
 
-INTERPRETER_VERSION = "0.6.0"
+INTERPRETER_VERSION = "0.7.0"
 HASH_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 

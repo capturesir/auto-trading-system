@@ -1,14 +1,17 @@
 """Read A-group ``news/1.0`` JSON. Markdown is never parsed.
 
 A file whose ``schema_version`` is not exactly ``news/1.0`` disables the
-``a_news`` source and is reported as ``data_error``. ``news_event`` v3 keeps
-items with impact ≥ 2 on both subject and affected names, positive direction,
-and ``tickers`` only. Empty tickers and ``market_impacts`` are shadow records.
+``a_news`` source and is reported as ``data_error``. ``news_event`` v4 keeps
+``status`` new and update, impact ≥ 2 on subject and affected names, positive
+direction, and ``tickers`` only. Visibility is the item's ``judged_at``.
+Events are de-duplicated by the root ``news_id`` (a trailing ``-u`` / ``-uN``
+suffix is stripped). Empty tickers and ``market_impacts`` are shadow records.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,6 +21,28 @@ from auto_trading.jsonutil import loads_strict
 
 REQUIRED_SCHEMA = "news/1.0"
 EXCLUDED_TYPES = frozenset({"rating", "other"})
+ACCEPTED_STATUS = frozenset({"new", "update"})
+_UPDATE_SUFFIX = re.compile(r"-u\d*$")
+
+
+def root_news_id(news_id: str) -> str:
+    """Original id. ``-u`` and ``-uN`` update suffixes are stripped."""
+    return _UPDATE_SUFFIX.sub("", news_id)
+
+
+def dedupe_chain(items: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Keep one item per root id. The latest ``judged_at`` in the chain wins."""
+    best: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for item in items:
+        root = root_news_id(str(item.get("news_id", "")))
+        if root not in best:
+            order.append(root)
+            best[root] = dict(item)
+            continue
+        if str(item.get("judged_at") or "") >= str(best[root].get("judged_at") or ""):
+            best[root] = dict(item)
+    return [best[key] for key in order]
 
 
 @dataclass
@@ -68,8 +93,8 @@ def classify_item(
     affected_min_impact: int = 2,
     prices_confirm: bool | None = None,
 ) -> list[NewsJudgement]:
-    """Classify one v3 news item. ``market_impacts`` never open a position."""
-    news_id = str(item.get("news_id", ""))
+    """Classify one v4 news item. ``market_impacts`` never open a position."""
+    news_id = root_news_id(str(item.get("news_id", "")))
     judgements: list[NewsJudgement] = []
     if item.get("market_impacts"):
         judgements.append(NewsJudgement(news_id, None, "shadow", "market_impacts"))
@@ -82,7 +107,7 @@ def classify_item(
     event_type = item.get("event_type")
     for row in tickers:
         ticker = str(row.get("ticker"))
-        if status != "new" or event_type in EXCLUDED_TYPES:
+        if status not in ACCEPTED_STATUS or event_type in EXCLUDED_TYPES:
             judgements.append(NewsJudgement(news_id, ticker, "filtered", "item_filter"))
             continue
         impact_ok = _impact_ok(row, min_impact, affected_min_impact)

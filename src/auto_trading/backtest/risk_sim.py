@@ -79,7 +79,7 @@ class RiskSimulator:
     def allow(self, side: str, kind: str) -> str | None:
         """Return a reject code, or None when the order may proceed.
 
-        Protective stops stay live through a full stop. Strategy sells do not.
+        Protective stops stay in force through a full stop. Strategy sells do not.
         R8 blocks new buys for the rest of the risk day and leaves sells alone.
         """
         if kind == "protective":

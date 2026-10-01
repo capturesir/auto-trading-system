@@ -31,7 +31,7 @@ _TW = (
     (1000, 1.0),
     (None, 5.0),
 )
-# Tokyo Stock Exchange price ticks, 待核對 against the live IB contract.
+# Tokyo Stock Exchange price ticks, 待核對 against the IB contract.
 _JP = (
     (3000, 1.0),
     (5000, 5.0),

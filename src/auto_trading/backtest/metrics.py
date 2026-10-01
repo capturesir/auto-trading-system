@@ -51,7 +51,6 @@ METRIC_KEYS = (
     "allocator_priority",
     "risk_triggers",
     "skipped_same_ticker",
-    "live_executable_ratio",
     "metrics_no_risk",
 )
 

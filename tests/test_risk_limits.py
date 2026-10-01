@@ -11,6 +11,7 @@ from auto_trading.risk.limits import (
     HASH_ODD_LOT_OFF,
     HASH_ODD_LOT_ON,
     HASH_R2_AS_FLOAT,
+    HASH_SCOPE_INSIDE_LIMITS,
     LIMIT_KEYS,
     assess_files,
     assess_payload,
@@ -36,7 +37,8 @@ HKT = timezone(timedelta(hours=8))
 
 def _payload(limits: dict, generated: datetime, digest: str | None = None) -> dict:
     return {
-        "schema_version": "risk_limits/1.0",
+        "schema_version": "risk_limits/1.1",
+        "trading_scope": "paper_only",
         "generated_at": generated.isoformat(timespec="seconds"),
         "stale_after_sec": 900,
         "config_hash": digest if digest is not None else config_hash(limits),
@@ -100,3 +102,28 @@ def test_stale_missing_and_mismatch_block_entries(tmp_path: Path) -> None:
     bad = tmp_path / "risk_limits.json"
     bad.write_text("{", encoding="utf-8")
     assert assess_files(bad, EXPECTED_PATH, now=now).reason == "unreadable"
+
+
+def test_scope_must_stay_outside_limits_and_be_paper_only() -> None:
+    now = datetime(2026, 10, 2, 7, 5, tzinfo=HKT)
+    inside = dict(EXPECTED_LIMITS)
+    inside["trading_scope"] = "paper_only"
+    assert config_hash(inside) == HASH_SCOPE_INSIDE_LIMITS
+    assert config_hash(inside) != HASH_ODD_LOT_OFF
+    mismatched = assess_payload(_payload(inside, now), EXPECTED_LIMITS, now=now)
+    assert mismatched.reason == "hash_mismatch"
+    assert not mismatched.entries_allowed
+    missing_scope = _payload(dict(EXPECTED_LIMITS), now)
+    del missing_scope["trading_scope"]
+    blocked = assess_payload(missing_scope, EXPECTED_LIMITS, now=now)
+    assert blocked.reason == "paper_only_violation"
+    assert blocked.paper_only_violation
+    assert not blocked.entries_allowed
+    old_schema = _payload(dict(EXPECTED_LIMITS), now)
+    old_schema["schema_version"] = "risk_limits/1.0"
+    assert assess_payload(old_schema, EXPECTED_LIMITS, now=now).reason == "unknown_schema"
+    with_multiplier = _payload(dict(EXPECTED_LIMITS), now)
+    with_multiplier["live_size_multiplier"] = None  # rejected: paper_only, key must be absent
+    held = assess_payload(with_multiplier, EXPECTED_LIMITS, now=now)
+    assert held.reason == "paper_only_violation"
+    assert not held.entries_allowed

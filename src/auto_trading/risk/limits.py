@@ -1,8 +1,11 @@
 """Risk-limit snapshot checks (execution spec §5.5.1, strategy spec §2.10).
 
-The strategy side reads ``state/risk_limits.json`` and compares it with
-``config/risk_limits_expected.json``. A stale, missing, unreadable, unknown,
-or hash-mismatched file blocks ENTRY and ADD. REDUCE and EXIT still run.
+The strategy side reads ``state/risk_limits.json`` (schema ``risk_limits/1.1``)
+and compares its ``limits`` object with ``config/risk_limits_expected.json``.
+The expected file's top level is that object: no schema and no
+``trading_scope``. A stale, missing, unreadable, unknown, or hash-mismatched
+file blocks ENTRY and ADD. A missing or non-``paper_only`` scope, or a
+``live_size_multiplier`` key, is rejected (paper_only). REDUCE and EXIT still run.
 ``tw_odd_lot_enabled`` is false until the odd-lot check (E1) passes. The
 ``true`` hash is only a comparison vector.
 """
@@ -18,7 +21,7 @@ from typing import Any
 
 from auto_trading.jsonutil import canonical_dumps, loads_strict, sha256_prefixed
 
-SCHEMA_VERSION = "risk_limits/1.0"
+SCHEMA_VERSION = "risk_limits/1.1"
 LIMIT_KEYS = (
     "R1_order_size_pct_nlv",
     "R2_max_order_notional_base",
@@ -48,6 +51,7 @@ INTEGER_KEYS = frozenset(
 HASH_ODD_LOT_OFF = "sha256:02460f0fef18180d32c5f0645a6ac0475903568c83a7b159a92776fb8ea3907b"
 HASH_ODD_LOT_ON = "sha256:39c52f1586658e8c9bd23be398dd1bd8eef75a04f6c3b8cc85da427e2533c28d"
 HASH_R2_AS_FLOAT = "sha256:64039ee55267c8e567181113adc53691e435fb9bd05f308d0d786f6301328cdb"
+HASH_SCOPE_INSIDE_LIMITS = "sha256:5bc6cf96361d80a13cbdb60325271d112ce003a8d14af4dc1252f2c09a89945c"
 
 EXPECTED_LIMITS: dict[str, Any] = {
     "R1_order_size_pct_nlv": 0.05,
@@ -81,25 +85,46 @@ def canonical_limits(limits: Mapping[str, Any]) -> str:
 
 @dataclass(frozen=True)
 class RiskConfigStatus:
-    """Result of comparing a live snapshot with the expected limits."""
+    """Result of comparing a runtime snapshot with the expected limits."""
 
     entries_allowed: bool
     reason: str | None
     config_hash: str | None
     odd_lot_enabled: bool
+    paper_only_violation: bool = False
 
 
-def _status(reason: str | None, digest: str | None, odd_lot: bool) -> RiskConfigStatus:
+def _status(
+    reason: str | None,
+    digest: str | None,
+    odd_lot: bool,
+    *,
+    paper_only_violation: bool = False,
+) -> RiskConfigStatus:
+    blocked = reason is not None or paper_only_violation
     return RiskConfigStatus(
-        entries_allowed=reason is None,
+        entries_allowed=not blocked,
         reason=reason,
         config_hash=digest,
         odd_lot_enabled=odd_lot,
+        paper_only_violation=paper_only_violation,
     )
 
 
 def _odd_lot(limits: Mapping[str, Any]) -> bool:
     return bool(limits.get("tw_odd_lot_enabled", False))
+
+
+def _paper_only_broken(payload: Mapping[str, Any]) -> bool:
+    """True when scope is missing or not paper_only, or a size multiplier is present."""
+    if payload.get("trading_scope") != "paper_only":
+        return True
+    if "live_size_multiplier" in payload:  # rejected: paper_only, must be absent
+        return True
+    limits = payload.get("limits")
+    key = "live_size_multiplier"  # rejected: paper_only, the key must be absent
+    present = isinstance(limits, Mapping) and key in limits
+    return present
 
 
 def assess_payload(
@@ -108,22 +133,36 @@ def assess_payload(
     *,
     now: datetime,
 ) -> RiskConfigStatus:
-    """Check one already-parsed ``risk_limits.json`` document."""
+    """Check one already-parsed ``risk_limits.json`` document.
+
+    Schema must be ``risk_limits/1.1``. ``trading_scope`` must be ``paper_only``
+    and must stay outside ``limits``. A bad scope blocks new entries.
+    """
+    paper_only = _paper_only_broken(payload)
     if payload.get("schema_version") != SCHEMA_VERSION:
-        return _status("unknown_schema", None, False)
+        return _status("unknown_schema", None, False, paper_only_violation=paper_only)
     limits = payload.get("limits")
     if not isinstance(limits, Mapping) or set(limits) != set(LIMIT_KEYS):
-        return _status("hash_mismatch", None, False)
+        digest = config_hash(limits) if isinstance(limits, Mapping) else None
+        odd = _odd_lot(limits) if isinstance(limits, Mapping) else False
+        return _status("hash_mismatch", digest, odd, paper_only_violation=paper_only)
     for key in INTEGER_KEYS:
         value = limits[key]
         if isinstance(value, bool) or not isinstance(value, int):
             digest = config_hash(limits)
-            return _status("hash_mismatch", digest, _odd_lot(limits))
+            return _status(
+                "hash_mismatch",
+                digest,
+                _odd_lot(limits),
+                paper_only_violation=paper_only,
+            )
     digest = config_hash(limits)
     declared = payload.get("config_hash")
     expected_digest = config_hash(expected)
     if digest != declared or digest != expected_digest:
-        return _status("hash_mismatch", digest, _odd_lot(limits))
+        return _status("hash_mismatch", digest, _odd_lot(limits), paper_only_violation=paper_only)
+    if paper_only:
+        return _status("paper_only_violation", digest, _odd_lot(limits), paper_only_violation=True)
     generated = _parse_time(payload.get("generated_at"))
     stale_after = payload.get("stale_after_sec", 900)
     if generated is None or not isinstance(stale_after, int):

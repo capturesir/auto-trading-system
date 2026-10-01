@@ -106,15 +106,15 @@ for signal in document.signals:
 
 ## 策略
 
-策略是一份版本化 JSON。`spec_hash` 是 `sha256:` 加上規範化 JSON 的 SHA-256：鍵排序、無空白、拿掉頂層 `mode`。所以把 `mode` 改成 `live` 不會改變雜湊；改任何其他欄位都會，必須重新核准。核准紀錄由人寫入，引擎自己不會核准，也不會呼叫券商。`news_event` 現行版本是 v3，v2 不能登記運行。
+策略是一份版本化 JSON。`spec_hash` 是 `sha256:` 加上規範化 JSON 的 SHA-256：鍵排序、無空白、拿掉頂層 `mode`。`mode` 只接受 `paper` 或 `disabled`；寫入其他值會被拒絕，也不會改變雜湊。改任何其他欄位都必須重新核准。核准紀錄由人寫入，引擎自己不會核准，也不會呼叫券商。生命週期停在模擬盤。`news_event` 現行版本是 v4（雜湊前綴 `9767e8571eea`），v2 與 v3 只留存檔，不能登記運行。
 
-台股零股開關預設關閉（整張 1,000 股）。整張超過單筆上限時，若 `config/adr_map.csv` 有有效對照、ADR 自己的訊號是 BUY、而且換算後的理論價差距不超過 1%，才改走 ADR。零股取整只在開關明確打開時使用。風控上限讀執行端 `state/risk_limits.json`，並與 `config/risk_limits_expected.json` 的 `config_hash` 核對（現行向量前綴 `02460f0f`，`tw_odd_lot_enabled` 為 false）。檔案過期、缺失或雜湊不符時，只產生減倉與出場意圖。
+台股零股開關預設關閉（整張 1,000 股）。示範淨值 HKD 1,000,000、目標 5% 時，單筆上限先除以 1.02 的價格緩衝，2330.TW 約 2,445 元、匯率 0.244 時可買 82 股；這只是對照，開關預設仍是關閉。整張超過單筆上限時，若 `config/adr_map.csv` 有有效對照、ADR 自己的訊號是 BUY、而且換算後的理論價差距不超過 1%，才改走 ADR。風控上限讀執行端 `state/risk_limits.json`（`risk_limits/1.1`，`trading_scope` 必須是 `paper_only`），雜湊只覆蓋 `limits` 物件，並與 `config/risk_limits_expected.json` 核對（現行向量前綴 `02460f0f`，`tw_odd_lot_enabled` 為 false）。把 `trading_scope` 放進 `limits` 會得到另一個雜湊（前綴 `5bc6cf96`），視為不符。檔案過期、缺失、範圍不對或雜湊不符時，只產生減倉與出場意圖。
 
 提醒只寫入 `alerts/pending/`。搬到 `sent/` 或 `failed/` 是執行端的工作，這個套件不會讀寫那兩個目錄。
 
 回測的 R9 全停預設不重設淨值高點。至少經過 5 個交易日，而且回撤回到 −10% 以上，才恢復。報告同時列出重設高點與永不恢復兩個對照。
 
-四份草稿用到的確認與出場條件都在日線迴圈裡計算；不認識的條件在驗證策略時直接失敗。整張台股買不進、且零股關閉時，回測會改試 ADR。`news_event` 的可見時間用 `judged_at`（更新則用該則的 `judged_at`），再沿該市場行事曆找 T0 與下一個進場日，假期會往後推。日線下載走 Yahoo chart，先讀本機 parquet，失敗會重試。樣本外切分、試驗登記與偏差歸因寫在回測報告裡。核准雜湊吻合時，`StrategyEngine.run` 會寫意圖檔；風控閘門與 IBKR 下單仍不在這一步。
+四份現行草稿用到的確認與出場條件都在日線迴圈裡計算；不認識的條件在驗證策略時直接失敗。整張台股買不進、且零股關閉時，回測會改試 ADR。`news_event` v4 接受 `status` 為 new 或 update，可見時間用 `judged_at`，並以去掉 `-u` 後綴的原始 `news_id` 去重。再沿該市場行事曆找 T0 與下一個進場日，假期會往後推。日線下載走 Yahoo chart，先讀本機 parquet，失敗會重試。樣本外切分、試驗登記與偏差歸因寫在回測報告裡。核准雜湊吻合且模式是模擬時，`StrategyEngine.run` 會寫意圖檔。G1–G4 只產出模擬盤評估報告，不改變模式。風控閘門與 IBKR 下單仍不在這一步。本系統沒有任何開關可以改接真實帳戶。
 
 ## 設定與憑證
 
@@ -135,14 +135,13 @@ set +a
 | `SIGNALS_PATH` | 訊號檔路徑 | `/workspace/invest/signals.json` |
 | `DATABASE_PATH` | SQLite 檔案 | `data/auto_trading.sqlite` |
 | `IBKR_HOST` | IB Gateway 位址 | `127.0.0.1` |
-| `IBKR_PORT` | IB Gateway 埠 | `4002`（Gateway 模擬帳戶常用埠） |
+| `IBKR_PORT` | IB Gateway 埠 | `4002`（只接受模擬埠 4002 與 7497） |
 | `IBKR_CLIENT_ID` | API client id | `1` |
-| `IBKR_ACCOUNT` | 帳戶代碼 | 空字串 |
-| `IBKR_PAPER` | 是否為模擬帳戶 | `true` |
+| `IBKR_ACCOUNT` | 模擬帳戶代碼 | 空字串 |
 | `TRADING_HOME` | 意圖、提醒、風控快照的根目錄 | `/workspace/trading` |
 | `BASE_CURRENCY` | 基準幣別，`HKD` 或 `USD` | `HKD` |
 
-預設是模擬帳戶。要改接正式帳戶時，須明確把 `IBKR_PAPER` 設為 `false`。
+這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。
 
 持倉、損益與交易日誌會經 repository 介面寫入本機 SQLite。資料表尚未建立。
 

@@ -24,6 +24,9 @@ VECTORS = {
     "news_event.v3.json": (
         "sha256:31e5581640493b3ad7c565dc9dbd7002703a69977ed0a1ed02e54b42b8a48903"
     ),
+    "news_event.v4.json": (
+        "sha256:9767e8571eea3d128ad9117b6a99fcc3cddd1ec5c429255722e67e27d53a23d0"
+    ),
 }
 
 
@@ -32,6 +35,7 @@ def test_draft_hashes_match_v06_vectors() -> None:
         document = loads_strict((DRAFTS / name).read_text(encoding="utf-8"))
         assert spec_hash(document) == digest
         assert digest.startswith("sha256:31e558164049") or name != "news_event.v3.json"
+        assert digest.startswith("sha256:9767e8571eea") or name != "news_event.v4.json"
 
 
 def test_integer_and_float_are_different_documents() -> None:

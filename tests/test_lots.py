@@ -21,9 +21,10 @@ def _tw(budget: float, *, odd_lot: bool, order_budget: float | None = None) -> o
     )
 
 
-def test_odd_lot_on_buys_83_shares() -> None:
-    decision = _tw(50_000, odd_lot=True)
-    assert decision.qty == 83
+def test_odd_lot_on_buys_82_shares_with_price_buffer() -> None:
+    # min(HKD 50,000 target, order cap / 1.02). 49,020 / 596.6 floors to 82.
+    decision = _tw(50_000, odd_lot=True, order_budget=50_000 / 1.02)
+    assert decision.qty == 82
     assert decision.status == "ok"
     assert decision.lot_size == 1000
 
@@ -42,13 +43,13 @@ def test_odd_lot_off_is_lot_too_large() -> None:
     assert decision.binding_limit == "order_cap"
 
 
-def test_live_eight_shares_are_below_min_cost() -> None:
+def test_small_odd_lot_is_below_min_cost() -> None:
     decision = _tw(5_000, odd_lot=True)
     assert decision.status == "BELOW_MIN_ORDER_COST"
     assert decision.qty == 0
 
 
-def test_us_live_zero_is_strategy_target() -> None:
+def test_us_tiny_budget_is_strategy_target() -> None:
     decision = size_quantity(
         price_local=1000,
         fx_to_base=7.8,

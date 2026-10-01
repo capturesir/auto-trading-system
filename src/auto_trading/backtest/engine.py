@@ -399,7 +399,6 @@ def _run_once(
             "excess_return_vs_benchmark": None,
             "monthly_returns": [],
             "adr_substitutions": counters["adr"],
-            "live_executable_ratio": None,
             "data_snapshot_hash": _snapshot(bars),
         }
     )
@@ -630,15 +629,34 @@ def _limit_up(market: str, rows: list[Bar]) -> bool:
 def _event_reversed(
     events: list[dict[str, Any]], ticker: str, news_id: str | None, day: str
 ) -> bool:
+    from auto_trading.news.reader import root_news_id
+
+    root = root_news_id(news_id) if news_id else ""
     for event in events:
-        if event.get("ticker") != ticker:
+        if event.get("ticker") != ticker and not event.get("ticker_removed"):
+            continue
+        if event.get("ticker_removed") and event.get("ticker") not in {None, ticker}:
             continue
         judged = str(event.get("judged_at") or "")
         if judged and judged[:10] > day:
             continue
-        if event.get("status") == "retracted" and event.get("news_id") == news_id:
+        event_id = str(event.get("news_id") or "")
+        same = bool(root) and root_news_id(event_id) == root
+        status = event.get("status")
+        if status == "retracted" and (same or event_id == news_id):
             return True
         if event.get("direction") == "negative" and int(event.get("impact") or 0) >= 2:
+            return True
+        if not (same and status == "update"):
+            continue
+        impact = int(event.get("impact") or 0)
+        disqualified = (
+            event.get("direction") != "positive"
+            or impact < 2
+            or event.get("event_type") in {"rating", "other"}
+            or event.get("ticker_removed") is True
+        )
+        if disqualified:
             return True
     return False
 

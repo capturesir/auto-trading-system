@@ -102,5 +102,8 @@ def validate_strategy(document: Mapping[str, Any]) -> None:
             errors.append(f"indicator {name!r} is not in the vocabulary")
     if document.get("action", {}).get("side") not in {None, "buy"}:
         errors.append("action.side must be buy")
+    mode = document.get("mode")
+    if mode is not None and mode not in {"paper", "disabled"}:
+        errors.append("mode must be paper or disabled")
     if errors:
         raise StrategyValidationError(errors)
