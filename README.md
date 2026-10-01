@@ -114,7 +114,7 @@ for signal in document.signals:
 
 回測的 R9 全停預設不重設淨值高點。至少經過 5 個交易日，而且回撤回到 −10% 以上，才恢復。報告同時列出重設高點與永不恢復兩個對照。
 
-四份現行草稿用到的確認與出場條件都在日線迴圈裡計算；不認識的條件在驗證策略時直接失敗。整張台股買不進、且零股關閉時，回測會改試 ADR。`news_event` v4 接受 `status` 為 new 或 update，可見時間用 `judged_at`，並以去掉 `-u` 後綴的原始 `news_id` 去重。再沿該市場行事曆找 T0 與下一個進場日，假期會往後推。日線下載走 Yahoo chart，先讀本機 parquet，失敗會重試。樣本外切分、試驗登記與偏差歸因寫在回測報告裡。核准雜湊吻合且模式是模擬時，`StrategyEngine.run` 會寫意圖檔。G1–G4 只產出模擬盤評估報告，不改變模式。風控閘門與 IBKR 下單仍不在這一步。本系統沒有任何開關可以改接真實帳戶。
+四份現行草稿用到的確認與出場條件都在日線迴圈裡計算；不認識的條件在驗證策略時直接失敗。整張台股買不進、且零股關閉時，回測會改試 ADR。`news_event` v4 接受 `status` 為 new 或 update，可見時間用 `judged_at`，並以去掉 `-u` 後綴的原始 `news_id` 去重。再沿該市場行事曆找 T0 與下一個進場日，假期會往後推。日線下載走 Yahoo chart，先讀本機 parquet，失敗會重試。樣本外切分、試驗登記與偏差歸因寫在回測報告裡。核准雜湊吻合且模式是模擬時，`StrategyEngine.run` 會寫意圖檔，不會直接下單。G1–G4 只產出模擬盤評估報告，不改變模式。下單只走風控閘門，再由模擬帳戶的 IBKR 轉接器送出。本系統沒有任何開關可以改接真實帳戶。
 
 ## 設定與憑證
 
@@ -137,13 +137,15 @@ set +a
 | `IBKR_HOST` | IB Gateway 位址 | `127.0.0.1` |
 | `IBKR_PORT` | IB Gateway 埠 | `4002`（只接受模擬埠 4002 與 7497） |
 | `IBKR_CLIENT_ID` | API client id | `1` |
-| `IBKR_ACCOUNT` | 模擬帳戶代碼 | 空字串 |
+| `IBKR_ACCOUNT` | 模擬帳戶代碼，有填時必須以 `DU` 開頭 | 空字串 |
+| `IBKR_PAPER_USERNAME` | 模擬帳戶登入名稱，只給 Gateway 使用 | 空字串 |
+| `IBKR_PAPER_PASSWORD` | 模擬帳戶登入密碼，只給 Gateway 使用 | 空字串 |
 | `TRADING_HOME` | 意圖、提醒、風控快照的根目錄 | `/workspace/trading` |
 | `BASE_CURRENCY` | 基準幣別，`HKD` 或 `USD` | `HKD` |
 
-這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。
+這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。登入只認上面兩個模擬帳戶變數。風控閘門是唯一會叫到券商 `place` 的路徑。`state/risk_limits.json` 用 `risk_limits/1.1`，`trading_scope` 固定為 `paper_only`。全停只能在本機解除，而且要明確加上 `--reset-hwm` 才會重設淨值高點。
 
-持倉、損益與交易日誌會經 repository 介面寫入本機 SQLite。資料表尚未建立。
+交易日誌寫在 `TRADING_HOME/data/trading.db`（SQLite WAL），並追加 JSONL 與每月 CSV。`trade why` 由成交追到意圖、訊號和策略雜湊。
 
 ## 開發與測試
 
@@ -156,15 +158,16 @@ python -m pip install -e ".[dev]"
 ruff check .
 ruff format --check .
 pytest
+python scripts/check_paper_only.py
 ```
 
-儀表板與 IBKR 連線的套件是選擇性依賴，這一版還沒有用到：
+儀表板套件仍是選擇性依賴，這一版沒有介面。`ib_async` 只在真正連上 IB Gateway 時才載入；測試和 CI 用模擬客戶端，不會開網路連線：
 
 ```bash
 python -m pip install -e ".[dashboard,ibkr]"
 ```
 
-GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 上執行 ruff 與 pytest。
+GitHub Actions（`.github/workflows/ci.yml`）會在 pull request 上執行 ruff、pytest，以及拒絕真實帳戶開關的掃描。
 
 ## 工具選擇
 

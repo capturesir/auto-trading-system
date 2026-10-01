@@ -47,7 +47,7 @@ def test_placeholders_are_not_wired_to_the_broker() -> None:
     from auto_trading.dashboard import render_dashboard
     from auto_trading.execution.ibkr import IbkrBroker
 
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ConnectionError, match="paper gateway"):
         IbkrBroker().fills()
     with pytest.raises(NotImplementedError):
         render_dashboard()

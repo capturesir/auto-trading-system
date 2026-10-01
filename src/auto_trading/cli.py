@@ -29,7 +29,14 @@ def main(argv: list[str] | None = None) -> None:
     backtest.add_argument("--bars", type=Path, required=True)
     backtest.add_argument("--start", default="")
     backtest.add_argument("--end", default="")
+    trade = sub.add_parser("trade", help="paper operator commands")
+    trade.add_argument("trade_args", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
+    if args.command == "trade":
+        from auto_trading.cli_trade import main as trade_main
+
+        trade_main(args.trade_args)
+        return
     if args.command == "hash":
         print(_hash(args.path))
         return

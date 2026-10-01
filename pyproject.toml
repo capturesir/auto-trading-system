@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 auto-trading = "auto_trading.cli:main"
+trade = "auto_trading.cli_trade:main"
 
 [project.optional-dependencies]
 dev = [

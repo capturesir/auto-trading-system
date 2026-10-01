@@ -19,7 +19,7 @@ def test_ibkr_settings_come_from_environment(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("IBKR_HOST", "10.0.0.8")
     monkeypatch.setenv("IBKR_PORT", "4002")
     monkeypatch.setenv("IBKR_CLIENT_ID", "7")
-    monkeypatch.setenv("IBKR_ACCOUNT", "PAPER-ACCOUNT")
+    monkeypatch.setenv("IBKR_ACCOUNT", "DU1234567")
     get_settings.cache_clear()
 
     settings = get_settings()
@@ -27,7 +27,7 @@ def test_ibkr_settings_come_from_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.ibkr_host == "10.0.0.8"
     assert settings.ibkr_port == 4002
     assert settings.ibkr_client_id == 7
-    assert settings.ibkr_account == "PAPER-ACCOUNT"
+    assert settings.ibkr_account == "DU1234567"
     assert "ibkr_paper" not in Settings.model_fields  # refused: paper_only
     assert Settings.model_config.get("env_file") is None
 
@@ -94,6 +94,11 @@ def test_env_example_lists_names_only() -> None:
         "IBKR_PORT",
         "IBKR_CLIENT_ID",
         "IBKR_ACCOUNT",
+        "IBKR_PAPER_USERNAME",
+        "IBKR_PAPER_PASSWORD",
+        "IB_CLIENT_ID_EXEC",
+        "IB_CLIENT_ID_RECON",
+        "IB_CLIENT_ID_REPORT",
         "TRADING_HOME",
         "BASE_CURRENCY",
     ]
