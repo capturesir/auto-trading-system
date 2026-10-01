@@ -1,0 +1,13 @@
+# v0.6 allocator. Priority and buffers are spec defaults, not strategy-hash fields.
+priority:
+  - sig_trend
+  - sig_pullback
+  - news_event
+  - fv_rotation
+price_buffer: 0.02
+name_room_pct: 0.095
+hard_cap_pct: 0.10
+r9_resume_default: manual_no_reset
+r9_min_halt_trading_days: 5
+r9_resume_drawdown_above: -0.10
+tw_odd_lot_enabled: false

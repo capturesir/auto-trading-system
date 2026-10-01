@@ -43,7 +43,7 @@
    dashboard               持倉、損益、訊號（Plotly）
 ```
 
-這一版實作了設定、訊號載入與驗證、策略雜湊核准，以及「執行器必須先經過風控」這條路徑。行情、指標、回測、風控規則、IBKR 連線、SQLite 結構、警示、報告與儀表板仍是佔位，匯入時不會連線到券商。
+這一版實作了設定、訊號載入、策略雜湊（不含 `mode`）、登記表、指標、日線回測（含手續費、限價成交、整手與零股、分配器、R8／R9）、意圖檔與只寫入 `pending/` 的提醒。執行器仍必須先經過風控閘門。IBKR 下單、儀表板與新聞自由文字解析仍不在這層。
 
 ## 目錄
 
@@ -106,7 +106,13 @@ for signal in document.signals:
 
 ## 策略
 
-策略是一份版本化 JSON。`spec_hash` 是排序後 JSON 的 SHA-256。引擎只接受雜湊、`id` 與 `version` 都和已核准紀錄一致的文件；改任何欄位（包含把 `mode` 改成 `live`）都會變成另一份文件，必須重新核准。核准紀錄由人寫入，引擎自己不會核准，也不會呼叫券商。
+策略是一份版本化 JSON。`spec_hash` 是 `sha256:` 加上規範化 JSON 的 SHA-256：鍵排序、無空白、拿掉頂層 `mode`。所以把 `mode` 改成 `live` 不會改變雜湊；改任何其他欄位都會，必須重新核准。核准紀錄由人寫入，引擎自己不會核准，也不會呼叫券商。`news_event` 現行版本是 v3，v2 不能登記運行。
+
+台股零股開關預設關閉（整張 1,000 股）。整張超過單筆上限時，若 `config/adr_map.csv` 有有效對照、ADR 自己的訊號是 BUY、而且換算後的理論價差距不超過 1%，才改走 ADR。零股取整只在開關明確打開時使用。風控上限讀執行端 `state/risk_limits.json`，並與 `config/risk_limits_expected.json` 的 `config_hash` 核對（現行向量前綴 `02460f0f`，`tw_odd_lot_enabled` 為 false）。檔案過期、缺失或雜湊不符時，只產生減倉與出場意圖。
+
+提醒只寫入 `alerts/pending/`。搬到 `sent/` 或 `failed/` 是執行端的工作，這個套件不會讀寫那兩個目錄。
+
+回測的 R9 全停預設不重設淨值高點。至少經過 5 個交易日，而且回撤回到 −10% 以上，才恢復。報告同時列出重設高點與永不恢復兩個對照。
 
 ## 設定與憑證
 
@@ -131,6 +137,8 @@ set +a
 | `IBKR_CLIENT_ID` | API client id | `1` |
 | `IBKR_ACCOUNT` | 帳戶代碼 | 空字串 |
 | `IBKR_PAPER` | 是否為模擬帳戶 | `true` |
+| `TRADING_HOME` | 意圖、提醒、風控快照的根目錄 | `/workspace/trading` |
+| `BASE_CURRENCY` | 基準幣別，`HKD` 或 `USD` | `HKD` |
 
 預設是模擬帳戶。要改接正式帳戶時，須明確把 `IBKR_PAPER` 設為 `false`。
 

@@ -1,0 +1,18 @@
+{
+  "R1_order_size_pct_nlv": 0.05,
+  "R2_max_order_notional_base": 200000,
+  "R3_max_position_pct_nlv": 0.10,
+  "R4_max_market_pct_nlv": {"US": 0.60, "HK": 0.40, "JP": 0.30, "KR": 0.20, "TW": 0.20},
+  "R5_max_ccy_pct_nlv": {"USD": 0.60, "JPY": 0.30, "KRW": 0.20, "TWD": 0.20},
+  "R6_max_gross_exposure_pct_nlv": 0.95,
+  "R7_require_cash_cover": true,
+  "R8_daily_loss_halt_pct": -0.02,
+  "R9_drawdown_warn_pct": -0.05,
+  "R9_drawdown_halt_pct": -0.10,
+  "R15_max_orders_per_day": 20,
+  "R23_consecutive_loss_demote": 3,
+  "protective_stop_mult": 1.5,
+  "default_protective_stop_pct": 0.15,
+  "min_confidence": 60,
+  "tw_odd_lot_enabled": false
+}

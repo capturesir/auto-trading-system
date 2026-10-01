@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from auto_trading.config import DEFAULT_DATABASE_PATH, DEFAULT_SIGNALS_PATH, Settings, get_settings
+from auto_trading.config import (
+    DEFAULT_DATABASE_PATH,
+    DEFAULT_SIGNALS_PATH,
+    DEFAULT_TRADING_HOME,
+    Settings,
+    get_settings,
+)
 
 
 def test_ibkr_settings_come_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -37,6 +43,8 @@ def test_defaults_when_environment_is_unset() -> None:
     assert settings.ibkr_client_id == 1
     assert settings.ibkr_account == ""
     assert settings.ibkr_paper is True
+    assert settings.trading_home == DEFAULT_TRADING_HOME
+    assert settings.base_currency == "HKD"
 
 
 def test_empty_env_vars_keep_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,6 +98,8 @@ def test_env_example_lists_names_only() -> None:
         "IBKR_CLIENT_ID",
         "IBKR_ACCOUNT",
         "IBKR_PAPER",
+        "TRADING_HOME",
+        "BASE_CURRENCY",
     ]
 
 

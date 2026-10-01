@@ -1,9 +1,8 @@
 """Backtests of approved strategy specs against stored bars.
 
-Replay is not implemented yet. A backtest must not place live orders.
+A backtest must not place live orders. The odd-lot toggle defaults to false.
 """
 
+from auto_trading.backtest.engine import Bar, BtSignal, LookaheadError, run_backtest
 
-def run_backtest(strategy_id: str, version: int) -> None:
-    """Placeholder for a historical or paper replay."""
-    raise NotImplementedError("backtesting is not implemented yet")
+__all__ = ["Bar", "BtSignal", "LookaheadError", "run_backtest"]

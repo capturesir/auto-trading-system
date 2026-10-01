@@ -19,6 +19,8 @@ ENV_VARS = (
     "IBKR_ACCOUNT",
     "IBKR_PAPER",
     "DATABASE_PATH",
+    "TRADING_HOME",
+    "BASE_CURRENCY",
 )
 
 
