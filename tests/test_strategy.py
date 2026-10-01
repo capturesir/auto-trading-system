@@ -59,10 +59,16 @@ def test_edited_spec_is_rejected() -> None:
         require_approved(edited, _approved())
 
 
-def test_engine_refuses_unapproved_spec_and_does_not_trade() -> None:
-    with pytest.raises(NotImplementedError, match="strategy execution"):
-        StrategyEngine().run(DOCUMENT, _approved())
-
+def test_engine_writes_intents_for_the_approved_hash(tmp_path) -> None:
     wrong = _approved().model_copy(update={"spec_hash": "sha256:" + "0" * 64})
     with pytest.raises(StrategyNotApproved):
-        StrategyEngine().run(DOCUMENT, wrong)
+        StrategyEngine().run(DOCUMENT, wrong, trading_home=tmp_path, session_date="2026-10-02")
+    assert list(tmp_path.rglob("*.json")) == []
+
+    path = StrategyEngine().run(
+        DOCUMENT, _approved(), trading_home=tmp_path, session_date="2026-10-02"
+    )
+    saved = path.read_text(encoding="utf-8")
+    assert '"schema_version": "intent/1.0"' in saved
+    assert spec_hash(DOCUMENT) in saved
+    assert '"intents": []' in saved

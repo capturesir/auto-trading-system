@@ -7,6 +7,7 @@ per ticker per session. An issuer group shares the 9.5% room.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from auto_trading.backtest.lots import LotDecision, size_quantity
@@ -37,6 +38,7 @@ class Allocated:
     status: str
     binding_limit: str | None = None
     odd_remainder_dropped: int = 0
+    adr_substituted: bool = False
 
 
 def _rank(strategy_id: str) -> int:
@@ -54,6 +56,7 @@ def allocate(
     odd_lot_enabled: bool = False,
     r1: float = 0.05,
     r2: float = 200_000,
+    adr_fallback: Callable[[Proposal], Proposal | None] | None = None,
 ) -> list[Allocated]:
     """Clip proposals to the shared caps. Nothing is rounded up."""
     held = dict(issuer_notional or {})
@@ -83,18 +86,43 @@ def allocate(
             odd_lot_enabled=odd_lot_enabled,
             lot_size=proposal.lot_size,
         )
+        chosen = proposal
+        substituted = False
+        if (
+            decision.status == "LOT_TOO_LARGE"
+            and proposal.market == "TW"
+            and not odd_lot_enabled
+            and adr_fallback is not None
+        ):
+            alternate = adr_fallback(proposal)
+            if alternate is not None and alternate.ticker not in opened:
+                alt_decision = size_quantity(
+                    price_local=alternate.price_local,
+                    fx_to_base=alternate.fx_to_base,
+                    strategy_budget=alternate.budget,
+                    order_budget=order_budget,
+                    ticker_budget=max(room, 0.0),
+                    market=alternate.market,
+                    odd_lot_enabled=False,
+                    lot_size=alternate.lot_size,
+                )
+                if alt_decision.status == "ok":
+                    decision = alt_decision
+                    chosen = alternate
+                    substituted = True
         out.append(
             Allocated(
-                proposal,
+                chosen,
                 decision.qty,
                 decision.status,
                 decision.binding_limit,
                 decision.odd_remainder_dropped,
+                adr_substituted=substituted,
             )
         )
         if decision.status == "ok":
-            opened.add(proposal.ticker)
-            held[proposal.issuer_group] = held.get(proposal.issuer_group, 0.0) + (
-                decision.qty * proposal.price_local * proposal.fx_to_base
+            opened.add(chosen.ticker)
+            held[chosen.issuer_group] = held.get(chosen.issuer_group, 0.0) + (
+                decision.qty * chosen.price_local * chosen.fx_to_base
             )
     return out

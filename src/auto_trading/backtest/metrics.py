@@ -122,5 +122,24 @@ def compute_metrics(
     gross_loss = abs(sum(losses))
     report["profit_factor"] = sum(wins) / gross_loss if gross_loss else None
     report["avg_holding_days"] = sum(holding_days) / len(holding_days) if holding_days else None
-    report["monthly_returns"] = report.get("monthly_returns") or []
+    dates = meta.get("equity_dates")
+    if isinstance(dates, list) and len(dates) == len(equity):
+        report["monthly_returns"] = _monthly(dates, equity)
+    else:
+        report["monthly_returns"] = report.get("monthly_returns") or []
     return report
+
+
+def _monthly(dates: list[str], equity: list[float]) -> list[dict[str, Any]]:
+    last: dict[str, float] = {}
+    for day, value in zip(dates, equity, strict=True):
+        last[str(day)[:7]] = value
+    months = sorted(last)
+    rows: list[dict[str, Any]] = []
+    previous: float | None = None
+    for month in months:
+        value = last[month]
+        if previous:
+            rows.append({"month": month, "return": value / previous - 1})
+        previous = value
+    return rows

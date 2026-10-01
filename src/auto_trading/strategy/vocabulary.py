@@ -28,6 +28,7 @@ class Series:
     highs: list[float] = field(default_factory=list)
     lows: list[float] = field(default_factory=list)
     volumes: list[float] = field(default_factory=list)
+    opens: list[float] = field(default_factory=list)
     raw_close: float | None = None
 
 

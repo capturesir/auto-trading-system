@@ -66,6 +66,23 @@ def kr_cost(notional: float, session: date, *, sell: bool, kosdaq: bool = False)
     return Cost(commission, tax, "KRW")
 
 
+def market_cost(
+    market: str, shares: float, notional: float, session: date, *, sell: bool, kosdaq: bool = False
+) -> Cost:
+    """Dispatch the default fee schedule for one fill. Amounts stay in local currency."""
+    if market == "US":
+        return us_cost(shares, notional, sell=sell)
+    if market == "JP":
+        return jp_cost(notional)
+    if market == "HK":
+        return hk_cost(notional)
+    if market == "KR":
+        return kr_cost(notional, session, sell=sell, kosdaq=kosdaq)
+    if market == "TW":
+        return tw_cost(notional, sell=sell)
+    raise ValueError(f"unsupported market {market}")
+
+
 def tw_cost(notional: float, *, sell: bool, etf: bool = False) -> Cost:
     """0.08% with a TWD 80 minimum. Stock sell tax is 0.3% (ETF 0.1%)."""
     commission = max(notional * 0.0008, 80.0)
