@@ -4,13 +4,12 @@
 been qualified against a paper Gateway are marked unverified for E1.
 
 Korean names use the six-digit local code, currency ``KRW``, and exchange
-``KRX``. On 2026-10-06 the paper Gateway's ``qualifyContracts`` for
-``005930`` / ``KSE`` / ``KRW`` returned no details; ib_async logs that as
-``Unknown contract``. ``KSE`` is the old venue code. SMART is not a
-documented Korea route. An empty qualify can also mean the account has no
-Korea stock permission (Client Portal, Trading Permissions, Stocks, Korea).
-Residents of Korea and IBIN or IBSJ clients cannot enable that permission.
-TODO: qualify ``KRX`` on the paper Gateway before treating the conId as known.
+``KRX``. On 2026-10-06 the paper Gateway qualified ``Stock('005930', 'KRX',
+'KRW')`` to conId 17382528, primaryExchange ``KRX``. SMART resolves to the
+same venue. ``KSE`` returns error 200 and is not sent. An empty qualify can
+still mean the account has no Korea stock permission (Client Portal, Trading
+Permissions, Stocks, Korea). Residents of Korea and IBIN or IBSJ clients
+cannot enable that permission.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ from typing import Any
 from auto_trading.market.instruments import describe
 
 # TODO E1 paper-account tests: qualifyContracts against Gateway before trusting these.
-# KRX is the candidate after KSE returned Unknown contract on 2026-10-06.
-UNVERIFIED_EXCHANGES = frozenset({"TWSE", "TPEX", "TSEJ", "KSE", "KRX"})
+# KRX was qualified on 2026-10-06 (005930, conId 17382528). KSE returns error 200.
+UNVERIFIED_EXCHANGES = frozenset({"TWSE", "TPEX", "TSEJ"})
 
 
 class UnsupportedInstrument(Exception):
@@ -95,7 +94,18 @@ def qualify_with(ticker: str, qualify: Callable[[dict[str, str]], list[Any]]) ->
     fields = ib_contract_fields(ticker)
     found = qualify(fields)
     if not found:
-        return {"fields": fields, "con_id": None, "error": "Unknown contract"}
+        return {
+            "fields": fields,
+            "con_id": None,
+            "primary_exchange": None,
+            "error": "Unknown contract",
+        }
     row = found[0]
-    con_id = row["conId"] if isinstance(row, dict) else row
-    return {"fields": fields, "con_id": con_id, "error": None}
+    if isinstance(row, dict):
+        return {
+            "fields": fields,
+            "con_id": row.get("conId"),
+            "primary_exchange": row.get("primaryExchange"),
+            "error": None,
+        }
+    return {"fields": fields, "con_id": row, "primary_exchange": None, "error": None}

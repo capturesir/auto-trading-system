@@ -36,6 +36,6 @@ def describe(ticker: str, *, odd_lot_enabled: bool = False) -> InstrumentSpec:
         return InstrumentSpec(ticker, "JP", "JPY", 100, 100, symbol, "TSEJ", "XTKS")
     if ticker.endswith(".KS") or ticker.endswith(".KQ"):
         symbol = ticker.split(".")[0]
-        # KRX is the venue name IBKR publishes now. KSE failed qualify on 2026-10-06.
+        # Paper Gateway 2026-10-06: 005930 / KRX / KRW -> conId 17382528. KSE is error 200.
         return InstrumentSpec(ticker, "KR", "KRW", 1, 1, symbol, "KRX", "XKRX")
     return InstrumentSpec(ticker, "US", "USD", 1, 1, ticker.replace("-", " "), "SMART", "XNYS")

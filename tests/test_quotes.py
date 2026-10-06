@@ -190,6 +190,70 @@ def test_delayed_open_is_logged_and_a_stale_entry_is_refused(caplog) -> None:
     assert RiskGate(stale).allow(stop) is None
 
 
+def test_delayed_freshness_uses_receipt_time_and_records_the_delay(tmp_path) -> None:
+    session = datetime(2026, 10, 2, 22, 0, tzinfo=HKT)
+    printed = session - timedelta(minutes=20)
+
+    def ibkr(_symbol: str) -> Quote:
+        return quote_from_ibkr(last=100, market_data_type=3, as_of=printed)
+
+    def unused(_symbol: str) -> Quote:
+        raise AssertionError("public source must stay idle")
+
+    quote = QuoteRouter(ibkr, unused, clock=lambda: session).fetch("AAPL")
+    assert quote.data_type == "delayed"
+    assert quote.received_at == session
+    assert quote.age_seconds(session) == 0
+    assert quote.delay_sec == pytest.approx(20 * 60)
+    assert RiskGate(_ctx(now=session, quotes={"AAPL": quote})).allow(_buy()) is None
+
+    held = Quote(
+        last=100,
+        as_of=printed,
+        source="ibkr",
+        data_type="delayed",
+        received_at=session - timedelta(seconds=11),
+    )
+    with pytest.raises(RiskRejected, match="R22"):
+        RiskGate(_ctx(now=session, quotes={"AAPL": held})).allow(_buy())
+
+    old_print = Quote(last=100, as_of=printed, received_at=session, data_type="realtime")
+    with pytest.raises(RiskRejected, match="R22"):
+        RiskGate(_ctx(now=session, quotes={"AAPL": old_print})).allow(_buy())
+
+    opened = datetime(2026, 10, 2, 21, 30, tzinfo=HKT)
+    plan = session_open_limit(
+        market="US",
+        side="BUY",
+        now=session,
+        session_open_at=opened,
+        open_price=100,
+        bid=None,
+        ask=None,
+        last=None,
+        decision_ref=100,
+        quote_source="ibkr",
+        data_type="delayed",
+        quote_as_of=printed,
+        quote_received_at=session,
+    )
+    assert plan.ready
+    assert plan.quote_age_sec == 0
+    assert plan.quote_delay_sec == pytest.approx(20 * 60)
+
+    client = MockClient(["DU1234567"])
+    intent = _buy(account="DU1234567")
+    apply_quote(intent, plan)
+
+    async def send() -> None:
+        await IbkrBroker(client, trading_home=tmp_path).place(intent)
+
+    asyncio.run(send())
+    assert client.placed[0]["quote_data_type"] == "delayed"
+    assert client.placed[0]["quote_age_sec"] == 0
+    assert client.placed[0]["quote_delay_sec"] == pytest.approx(20 * 60)
+
+
 def test_order_records_the_quote_source(tmp_path) -> None:
     client = MockClient(["DU1234567"])
     broker = IbkrBroker(client, trading_home=tmp_path)

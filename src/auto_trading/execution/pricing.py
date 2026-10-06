@@ -4,7 +4,8 @@ An entry waits until five minutes after the open, then uses the official
 open times 1.001 (10 bps), aligned to the tick, DAY. If the open is missing,
 the reference falls back to the mid when the spread is within 1%.
 Delayed IBKR data (market data type 3) is accepted in paper mode and logged.
-The plan records which quote source produced the reference.
+Freshness for that print is receipt time. The plan records the source and
+the market-data delay.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ class LimitPlan:
     quote_source: str | None = None
     data_type: str | None = None
     quote_age_sec: float | None = None
+    quote_delay_sec: float | None = None
 
 
 def apply_quote(intent: Any, plan: LimitPlan) -> None:
@@ -42,6 +44,7 @@ def apply_quote(intent: Any, plan: LimitPlan) -> None:
     intent.quote_source = plan.quote_source
     intent.quote_data_type = plan.data_type
     intent.quote_age_sec = plan.quote_age_sec
+    intent.quote_delay_sec = plan.quote_delay_sec
 
 
 def align_tick(price: float, tick: float, *, buy: bool) -> float:
@@ -68,9 +71,20 @@ def session_open_limit(
     quote_source: str | None = None,
     data_type: str | None = None,
     quote_as_of: datetime | None = None,
+    quote_received_at: datetime | None = None,
 ) -> LimitPlan:
-    """Price one order. ``ready`` is false during the first five minutes."""
-    age = None if quote_as_of is None else (now - quote_as_of).total_seconds()
+    """Price one order. ``ready`` is false during the first five minutes.
+
+    For delayed data, ``quote_age_sec`` is seconds since receipt and
+    ``quote_delay_sec`` is how far ``quote_as_of`` lags that receipt.
+    """
+    received = quote_received_at or now
+    if data_type == "delayed":
+        age = (now - received).total_seconds()
+        delay = None if quote_as_of is None else (received - quote_as_of).total_seconds()
+    else:
+        age = None if quote_as_of is None else (now - quote_as_of).total_seconds()
+        delay = None
     if data_type == "delayed":
         log.info(
             "session_open pricing accepted delayed data source=%s market=%s",
@@ -89,6 +103,7 @@ def session_open_limit(
             quote_source,
             data_type,
             age,
+            delay,
         )
     buy = side == "BUY"
     mode = "session_open"
@@ -98,7 +113,7 @@ def session_open_limit(
         reference = _fallback(bid, ask, last)
         if reference is None:
             return LimitPlan(
-                False, "R22", mode, None, None, None, None, quote_source, data_type, age
+                False, "R22", mode, None, None, None, None, quote_source, data_type, age, delay
             )
     factor = 1 + offset_bps / 10_000 if buy else 1 - offset_bps / 10_000
     raw = reference * factor
@@ -117,6 +132,7 @@ def session_open_limit(
                 quote_source,
                 data_type,
                 age,
+                delay,
             )
         limit = min(limit, align_tick(cap, tick_size(market, cap), buy=True))
     slippage = None
@@ -125,7 +141,17 @@ def session_open_limit(
         if not buy:
             slippage = (decision_ref / limit - 1) * 10_000 if limit else None
     return LimitPlan(
-        True, None, mode, open_price, reference, limit, slippage, quote_source, data_type, age
+        True,
+        None,
+        mode,
+        open_price,
+        reference,
+        limit,
+        slippage,
+        quote_source,
+        data_type,
+        age,
+        delay,
     )
 
 

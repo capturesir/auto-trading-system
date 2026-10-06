@@ -89,6 +89,7 @@ class IbkrBroker:
             "quote_source": intent.quote_source,
             "quote_data_type": intent.quote_data_type,
             "quote_age_sec": intent.quote_age_sec,
+            "quote_delay_sec": intent.quote_delay_sec,
         }
         return await self.client.place_order(order)
 

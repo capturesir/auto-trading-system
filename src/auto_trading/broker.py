@@ -70,6 +70,7 @@ class OrderIntent(BaseModel):
     quote_source: str | None = None
     quote_data_type: str | None = None
     quote_age_sec: float | None = None
+    quote_delay_sec: float | None = None
 
 
 class OrderAck(BaseModel):

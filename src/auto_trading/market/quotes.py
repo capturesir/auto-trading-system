@@ -3,7 +3,8 @@
 The fallback runs on IBKR errors 10197, 354, and 10167, and on a timeout.
 10197 means another login is holding the market-data session. The first
 10197 writes a pending alert, and the next successful IBKR quote writes
-the clear alert. Every quote keeps its source, data type, and timestamp.
+the clear alert. Every quote keeps its source, data type, market time, and
+receipt time. Delayed freshness uses the receipt time.
 """
 
 from __future__ import annotations
@@ -43,8 +44,13 @@ def quote_from_ibkr(
     bid: float | None = None,
     ask: float | None = None,
     open_price: float | None = None,
+    received_at: datetime | None = None,
 ) -> Quote:
-    """Build a gate quote from one IBKR tick."""
+    """Build a gate quote from one IBKR tick.
+
+    ``as_of`` is the exchange timestamp. ``received_at`` is when this process
+    accepted the tick. Delayed quotes record ``delay_sec`` from those two.
+    """
     kind = data_type_from_ibkr(market_data_type)
     return Quote(
         last=last,
@@ -55,6 +61,7 @@ def quote_from_ibkr(
         source="ibkr",
         data_type=kind,
         delayed=kind == "delayed",
+        received_at=received_at,
     )
 
 
@@ -84,7 +91,7 @@ class QuoteRouter:
     def fetch(self, symbol: str) -> Quote:
         """Return one quote. A competing session falls back until IBKR answers again."""
         try:
-            quote = self._ibkr(symbol)
+            quote = self._stamp(self._ibkr(symbol))
         except (MarketDataError, TimeoutError) as exc:
             self._note_failure(exc)
             return self._public(symbol)
@@ -95,6 +102,14 @@ class QuoteRouter:
                 "clear",
                 "IBKR 行情恢復，手機登入不再佔用報價。",
             )
+        return quote
+
+    def _stamp(self, quote: Quote) -> Quote:
+        """Mark when this process received an IBKR quote."""
+        if quote.received_at is None:
+            quote.received_at = self._clock()
+        if quote.data_type == "delayed" and quote.delay_sec is None:
+            quote.delay_sec = (quote.received_at - quote.as_of).total_seconds()
         return quote
 
     def _note_failure(self, exc: Exception) -> None:

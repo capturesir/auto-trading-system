@@ -56,7 +56,12 @@ class Held:
 
 @dataclass
 class Quote:
-    """One price. ``source`` is ibkr or yahoo. ``data_type`` is realtime, delayed, or public."""
+    """One price. ``source`` is ibkr or yahoo. ``data_type`` is realtime, delayed, or public.
+
+    ``as_of`` is the market timestamp. ``received_at`` is when this process
+    got the quote. Delayed type 3 prints lag by about 15 minutes, so their
+    freshness for R22 is receipt time. ``delay_sec`` keeps that lag.
+    """
 
     last: float
     as_of: datetime
@@ -66,15 +71,25 @@ class Quote:
     delayed: bool = False
     source: str = "ibkr"
     data_type: str = "realtime"
+    received_at: datetime | None = None
+    delay_sec: float | None = None
 
     def __post_init__(self) -> None:
         if self.delayed and self.data_type == "realtime":
             self.data_type = "delayed"
         if self.data_type == "delayed":
             self.delayed = True
+        if self.data_type == "delayed" and self.received_at is not None and self.delay_sec is None:
+            self.delay_sec = (self.received_at - self.as_of).total_seconds()
 
     def age_seconds(self, now: datetime) -> float:
-        """Seconds between the quote timestamp and ``now``."""
+        """Seconds the quote has been in hand, for the staleness check.
+
+        Delayed quotes use ``received_at``. Realtime and public quotes use
+        the market timestamp on ``as_of``.
+        """
+        if self.data_type == "delayed" and self.received_at is not None:
+            return (now - self.received_at).total_seconds()
         return (now - self.as_of).total_seconds()
 
 
@@ -325,6 +340,9 @@ def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
     if quote is None or price is None:
         return "R22"
     opening = intent.intent_type not in REDUCING and not intent.reduce_only
+    # Paper mode reaches this rule. Delayed freshness is receipt time, so a
+    # type-3 print whose market timestamp is 15–20 minutes old still passes
+    # while ``delay_sec`` records that lag.
     if opening and quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
         return "R22"
     if intent.limit_price is not None and quote.last:
