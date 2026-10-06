@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+import tempfile
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
-from auto_trading.broker import OrderSide
+from auto_trading.broker import OrderAck, OrderIntent, OrderSide
 from auto_trading.execution.ibkr import IbkrBroker
 from auto_trading.execution.pricing import apply_quote, session_open_limit
+from auto_trading.execution.risk_state import build_risk_limits, write_risk_limits
 from auto_trading.market.quotes import (
     MarketDataError,
     QuoteRouter,
@@ -18,11 +21,56 @@ from auto_trading.market.quotes import (
     yahoo_quote,
 )
 from auto_trading.market.yahoo import parse_public_quote
-from auto_trading.risk import Held, Quote, RiskGate, RiskRejected
-from tests.test_execution_paper import MockClient, _buy, _ctx
+from auto_trading.risk import GateContext, Held, Quote, RiskGate, RiskRejected
 
 HKT = timezone(timedelta(hours=8))
 NOW = datetime(2026, 10, 6, 10, 0, tzinfo=HKT)
+# 22:00 Macau is inside the US cash session, matching the paper-execution fixtures.
+SESSION = datetime(2026, 10, 2, 22, 0, tzinfo=HKT)
+
+
+class MockClient:
+    def __init__(self, accounts: list[str]) -> None:
+        self.accounts = accounts
+        self.placed: list[dict] = []
+
+    async def managed_accounts(self) -> list[str]:
+        return list(self.accounts)
+
+    async def place_order(self, order: dict) -> OrderAck:
+        self.placed.append(order)
+        return OrderAck(client_id=order["client_id"], broker_order_id="paper-1")
+
+
+def _buy(**kwargs: object) -> OrderIntent:
+    payload: dict = {
+        "client_id": "cid-1",
+        "symbol": "AAPL",
+        "side": OrderSide.BUY,
+        "quantity": 10,
+        "limit_price": 100.0,
+        "currency": "HKD",
+        "market": "US",
+    }
+    payload.update(kwargs)
+    return OrderIntent(**payload)
+
+
+def _ctx(**kwargs: object) -> GateContext:
+    home = kwargs.pop("trading_home", None)
+    if home is None:
+        home = Path(tempfile.mkdtemp())
+    root = Path(home)
+    if not (root / "state" / "risk_limits.json").is_file():
+        write_risk_limits(root, build_risk_limits(now=SESSION, nlv=1_000_000, account="DU1234567"))
+    payload: dict = {
+        "now": SESSION,
+        "trading_home": root,
+        "quotes": {"AAPL": Quote(last=100.0, as_of=SESSION)},
+        "fx_to_base": {"TWD": 0.244, "HKD": 1.0, "USD": 1.0, "JPY": 0.05},
+    }
+    payload.update(kwargs)
+    return GateContext(**payload)
 
 
 def test_public_chart_quote_uses_the_yahoo_timestamp() -> None:
