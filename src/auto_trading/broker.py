@@ -71,6 +71,7 @@ class OrderIntent(BaseModel):
     quote_data_type: str | None = None
     quote_age_sec: float | None = None
     quote_delay_sec: float | None = None
+    quote_market_data_type: int | None = None
 
 
 class OrderAck(BaseModel):

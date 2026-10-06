@@ -1,11 +1,11 @@
 """R0 paper-account guard.
 
 Every managed account must match ``^DU[A-Z]?[0-9]+$`` (one optional letter
-after ``DU``, then digits). Ports other than the paper Gateway and paper
-TWS ports are refused before connect. When ``IBKR_PAPER_ACCOUNT`` is set,
-``managedAccounts`` must be exactly that one account. A mismatch or a later
-change in the account set stops new orders and modifications, latches a
-full stop, and still allows cancels.
+after ``DU``, then digits). ``IBKR_PAPER_ACCOUNT`` is required and must be
+that exact account; any other account or an extra account is refused. Ports
+other than the paper Gateway and paper TWS ports are refused before connect.
+A mismatch or a later change in the account set stops new orders and
+modifications, disconnects, latches a full stop, and still allows cancels.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from auto_trading.paper_account import DU_ACCOUNT
+from auto_trading.portfolio.journal import TradeJournal
 
 PAPER_PORTS = (4002, 7497)
 _PIN_ENV = "IBKR_PAPER_ACCOUNT"
@@ -29,7 +30,7 @@ class PaperAccountError(Exception):
 
 
 def paper_account_pin(explicit: str = "") -> str:
-    """Return the optional account pin. Empty means the pin is unset."""
+    """Return the required account pin. Empty means the pin is unset."""
     chosen = explicit.strip()
     if not chosen:
         chosen = os.environ.get(_PIN_ENV, "")
@@ -52,12 +53,12 @@ class AccountGuard:
         self.violation: str | None = None
         self._on_violation = on_violation
         self.check_port()
-        if self.expected_account and DU_ACCOUNT.fullmatch(self.expected_account) is None:
+        if not self.expected_account or DU_ACCOUNT.fullmatch(self.expected_account) is None:
             self._trip("R0_NOT_PAPER_ACCOUNT")
 
     def check_port(self) -> None:
         if self.port not in PAPER_PORTS:
-            self._trip("R0_LIVE_PORT")
+            self._trip("R0_FORBIDDEN_PORT")
 
     def observe(self, accounts: list[str]) -> None:
         """Check one managedAccounts snapshot. The first clean set is the baseline."""
@@ -97,3 +98,7 @@ def latch_kill_switch(trading_home: Path, code: str) -> None:
     """Full stop used by an R0 violation. Cancels are not blocked by this file."""
     trading_home.mkdir(parents=True, exist_ok=True)
     (trading_home / "KILL_SWITCH").write_text(code + "\n", encoding="utf-8")
+    try:
+        TradeJournal(trading_home).record_anomaly(kind=code, detail={"code": code})
+    except Exception:
+        return

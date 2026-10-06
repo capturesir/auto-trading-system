@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from auto_trading.backtest.adr import AdrMapping, consider_adr
@@ -20,6 +21,7 @@ from auto_trading.backtest.fx import to_base
 from auto_trading.backtest.lots import size_quantity
 from auto_trading.backtest.metrics import METRIC_KEYS, compute_metrics
 from auto_trading.backtest.risk_sim import RiskSimulator, fill_rejections
+from auto_trading.backtest.veto import blocked_tickers
 from auto_trading.market.instruments import describe
 from auto_trading.news.timing import entry_due, event_clock, is_first_session_of_week
 from auto_trading.strategy.conditions import UnknownCondition, choose_exit, confirms, exit_hits
@@ -994,6 +996,7 @@ def run_backtest(
     bars: dict[str, list[Bar]],
     signals: list[BtSignal],
     *,
+    veto_paths: list[Path] | None = None,
     nlv: float = 1_000_000.0,
     base_currency: str = "HKD",
     rates_hkd_per_unit: dict[str, float] | None = None,
@@ -1005,7 +1008,14 @@ def run_backtest(
     adr_map: list[AdrMapping] | None = None,
     events: list[dict[str, Any]] | None = None,
 ) -> BacktestResult:
-    """Run one backtest. Odd lots stay off unless ``odd_lot_enabled`` is set."""
+    """Run one backtest. Odd lots stay off unless ``odd_lot_enabled`` is set.
+
+    ``veto_paths`` are loaded by ``schema_version``. A blocked ticker is dropped
+    before the daily loop.
+    """
+    vetoed = blocked_tickers(veto_paths)
+    if vetoed:
+        signals = [row for row in signals if row.ticker not in vetoed]
     rates = rates_hkd_per_unit or {
         "HKD": 1.0,
         "USD": 7.8,

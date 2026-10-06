@@ -7,6 +7,7 @@ rules. R23 records a streak and does not change the mode.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -18,11 +19,15 @@ from auto_trading.execution.oms import order_ref
 from auto_trading.execution.r0 import DU_ACCOUNT, PAPER_PORTS, paper_account_pin
 from auto_trading.execution.risk_state import RiskConfigMismatch, verify_risk_limits_file
 from auto_trading.execution.sessions import BLOCK_ALL, session_window
+from auto_trading.risk.adr_premium import r28_result
 from auto_trading.risk.limits import EXPECTED_LIMITS
+
+log = logging.getLogger(__name__)
 
 OPENING = frozenset({"ENTRY", "ADD"})
 REDUCING = frozenset({"REDUCE", "EXIT"})
 MARKETS = frozenset({"US", "HK", "JP", "KR", "TW"})
+MAX_QUOTE_DELAY_SEC = 1800
 
 
 class RiskRejected(Exception):
@@ -73,24 +78,27 @@ class Quote:
     data_type: str = "realtime"
     received_at: datetime | None = None
     delay_sec: float | None = None
+    market_data_type: int | None = None
 
     def __post_init__(self) -> None:
+        if self.market_data_type == 2:
+            self.data_type = "rejected"
         if self.delayed and self.data_type == "realtime":
             self.data_type = "delayed"
         if self.data_type == "delayed":
             self.delayed = True
-        if self.data_type == "delayed" and self.received_at is not None and self.delay_sec is None:
+        if self.received_at is not None and self.delay_sec is None:
             self.delay_sec = (self.received_at - self.as_of).total_seconds()
 
     def age_seconds(self, now: datetime) -> float:
-        """Seconds the quote has been in hand, for the staleness check.
+        """Seconds since this process received the quote.
 
-        Delayed quotes use ``received_at``. Realtime and public quotes use
-        the market timestamp on ``as_of``.
+        Freshness never uses the exchange timestamp on ``as_of``. A missing
+        receipt time is stale.
         """
-        if self.data_type == "delayed" and self.received_at is not None:
-            return (now - self.received_at).total_seconds()
-        return (now - self.as_of).total_seconds()
+        if self.received_at is None:
+            return float("inf")
+        return (now - self.received_at).total_seconds()
 
 
 @dataclass
@@ -129,6 +137,13 @@ class GateContext:
     approval_price: float | None = None
     reapproval_deviation: float = 0.015
     quote_stale_sec: int = 10
+    adr_state_missing: bool = False
+    adr_paused: frozenset[str] = frozenset()
+    adr_controlled: frozenset[str] = frozenset({"TSM"})
+    adr_map_symbols: tuple[str, ...] | None = ("TSM",)
+    adr_last_db: frozenset[str] = frozenset()
+    adr_rule: dict[str, Any] | None = None
+    adr_expected_rule: dict[str, Any] | None = None
     r23_note: str | None = None
     trading_home: Path | None = None
     unknown_symbols: frozenset[str] = frozenset()
@@ -156,8 +171,9 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     code = _r0(intent, ctx)
     if code:
         return code
+    reducing = intent.intent_type in REDUCING or intent.reduce_only or intent.protective
     file_code = _risk_file(ctx)
-    if file_code:
+    if file_code and not reducing:
         return file_code
     if ctx.kill_switch:
         return "R18"
@@ -167,7 +183,7 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         return "R18"
     if intent.mode != "paper" or intent.live_size_multiplier is not None:
         return "LIVE_NOT_AUTHORIZED"
-    if intent.spec_hash is not None and ctx.approved_hash not in {None, intent.spec_hash}:
+    if intent.spec_hash is not None and ctx.approved_hash != intent.spec_hash:
         return "R25"
     if ctx.registry_mode != "paper":
         return "LIVE_NOT_AUTHORIZED"
@@ -198,6 +214,9 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         opening = _opening_rules(intent, ctx, market)
         if opening:
             return opening
+        paused = _r28(intent, ctx)
+        if paused:
+            return paused
     quote_code = _quote_rules(intent, ctx)
     if quote_code:
         return quote_code
@@ -212,11 +231,11 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
 
 def _r0(intent: OrderIntent, ctx: GateContext) -> str | None:
     if ctx.port not in PAPER_PORTS:
-        return "R0_LIVE_PORT"
+        return "R0_FORBIDDEN_PORT"
     if not ctx.accounts or any(DU_ACCOUNT.fullmatch(account) is None for account in ctx.accounts):
         return "R0_NOT_PAPER_ACCOUNT"
     pin = paper_account_pin(ctx.expected_account)
-    if pin and DU_ACCOUNT.fullmatch(pin) is None:
+    if not pin or DU_ACCOUNT.fullmatch(pin) is None:
         return "R0_NOT_PAPER_ACCOUNT"
     if pin and frozenset(ctx.accounts) != {pin}:
         return "R0_ACCOUNTS_CHANGED"
@@ -332,6 +351,27 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
     return None
 
 
+def _r28(intent: OrderIntent, ctx: GateContext) -> str | None:
+    """ADR premium pause. Exceptions become a refusal, not a crash."""
+    try:
+        state = None if ctx.adr_state_missing else {"paused": sorted(ctx.adr_paused)}
+        return r28_result(
+            mode="paper" if ctx.registry_mode == "paper" else ctx.registry_mode,
+            side=intent.side.value,
+            intent_type=intent.intent_type,
+            symbol=intent.symbol,
+            protective=intent.protective,
+            reduce_only=intent.reduce_only,
+            state=state,
+            map_symbols=ctx.adr_map_symbols,
+            last_db=ctx.adr_last_db,
+            rule=ctx.adr_rule,
+            expected_rule=ctx.adr_expected_rule,
+        )
+    except Exception:
+        return "ADR_PREMIUM_PAUSED"
+
+
 def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
     if intent.protective:
         return None
@@ -339,12 +379,28 @@ def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
     price = _price(intent, ctx)
     if quote is None or price is None:
         return "R22"
-    opening = intent.intent_type not in REDUCING and not intent.reduce_only
-    # Paper mode reaches this rule. Delayed freshness is receipt time, so a
-    # type-3 print whose market timestamp is 15–20 minutes old still passes
-    # while ``delay_sec`` records that lag.
-    if opening and quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
+    log.info(
+        "quote_source=%s market_data_type=%s quote_data_type=%s delay_sec=%s",
+        quote.source,
+        quote.market_data_type,
+        quote.data_type,
+        quote.delay_sec,
+    )
+    if quote.source == "yahoo" or quote.data_type == "public":
         return "R22"
+    if quote.market_data_type == 2 or quote.data_type == "rejected":
+        return "R22"
+    paper = ctx.registry_mode == "paper" and intent.mode == "paper"
+    if quote.data_type == "delayed":
+        if not paper or quote.market_data_type not in (3, 4):
+            return "R22"
+    elif quote.data_type != "realtime":
+        return "R22"
+    if quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
+        return "R22"
+    delay = quote.delay_sec
+    if delay is not None and delay > MAX_QUOTE_DELAY_SEC:
+        return "QUOTE_DELAY_EXCEEDED"
     if intent.limit_price is not None and quote.last:
         drift = abs(intent.limit_price / quote.last - 1)
         if drift > 0.02 + 1e-9:

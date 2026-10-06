@@ -1,50 +1,34 @@
-"""Write an IBC config for an already-started paper Gateway.
-
-This is the only program that reads the paper login variables. The trading
-process connects to a Gateway that is already logged in on 127.0.0.1:4002
-and does not read those variables.
-"""
+"""Render the paper IBC config. The checker lives in ``vps/deploy``."""
 
 from __future__ import annotations
 
-import os
-import stat
-import sys
+import importlib.util
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "config" / "ibc.paper.ini.template"
-USER_VAR = "IBKR_" + "PAPER_USERNAME"
-PASSWORD_VAR = "IBKR_" + "PAPER_PASSWORD"
+MODULE = ROOT / "vps" / "deploy" / "render_template.py"
 
 
-def write_ibc_config(dest: Path, *, template: Path = TEMPLATE) -> Path:
-    """Render ``template`` into ``dest`` with mode 0600. Never logs the values."""
-    username = os.environ.get(USER_VAR, "")
-    password = os.environ.get(PASSWORD_VAR, "")
-    if not username or not password:
-        raise RuntimeError(f"missing {USER_VAR} or {PASSWORD_VAR}")
-    text = template.read_text(encoding="utf-8")
-    if "TradingMode=paper" not in text or "OverrideTwsApiPort=4002" not in text:
-        raise RuntimeError("IBC template is not the paper Gateway template")
-    rendered = text.replace("__" + USER_VAR + "__", username)
-    rendered = rendered.replace("__" + PASSWORD_VAR + "__", password)
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_text(rendered, encoding="utf-8")
-    dest.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    return dest
+def _renderer():
+    spec = importlib.util.spec_from_file_location("render_template", MODULE)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("missing vps/deploy/render_template.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def write_ibc_config(dest: Path, *, template: Path | None = None) -> Path:
+    """Delegate to the single deploy renderer."""
+    renderer = _renderer()
+    if template is None:
+        return renderer.write_ibc_config(dest)
+    return renderer.write_ibc_config(dest, template=template)
 
 
 def main(argv: list[str] | None = None) -> None:
     """Write the config path given on the command line and do not connect."""
-    args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 1:
-        raise SystemExit("usage: launch_ib_gateway.py <config-path>")
-    try:
-        path = write_ibc_config(Path(args[0]))
-    except RuntimeError as exc:
-        raise SystemExit(str(exc)) from exc
-    print(path)
+    _renderer().main(argv)
 
 
 if __name__ == "__main__":

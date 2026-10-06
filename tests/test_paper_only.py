@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -30,6 +31,18 @@ def test_scan_allows_the_price_metric_and_flags_a_switch() -> None:
     assert line_allowed('os.environ["IBKR_PAPER_ACCOUNT"]')
     bare = "IBKR_" + "PAPER"
     assert line_allowed(bare + " = 1") is False
+
+
+def test_scan_rejects_live_mode_and_forbidden_port_assignments(tmp_path: Path) -> None:
+    from auto_trading.paper_only import scan_tree
+
+    mode_line = "live_" + "mode = True"
+    port_line = "port = 40" + "01"
+    assert line_allowed(mode_line) is False
+    assert line_allowed(port_line + "  # refused: paper_only") is False
+    for suffix in (".ini", ".sh", ".service", ".template"):
+        (tmp_path / f"bad{suffix}").write_text(mode_line + "\n", encoding="utf-8")
+    assert scan_tree(tmp_path)
 
 
 def test_real_account_ports_are_refused() -> None:

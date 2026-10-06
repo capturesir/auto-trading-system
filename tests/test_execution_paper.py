@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
@@ -19,7 +20,6 @@ from auto_trading.execution.approvals import (
     approve,
     hash12,
     needs_reapproval,
-    order_hash,
     queue_order,
 )
 from auto_trading.execution.contracts import (
@@ -50,6 +50,10 @@ class MockClient:
         self.placed: list[dict] = []
         self.cancelled: list[str] = []
         self.modified: list[tuple[str, float]] = []
+        self.disconnected = False
+
+    def disconnect(self) -> None:
+        self.disconnected = True
 
     async def managed_accounts(self) -> list[str]:
         return list(self.accounts)
@@ -106,8 +110,8 @@ def _ctx(**kwargs: object) -> GateContext:
         "now": NOW,
         "trading_home": root,
         "quotes": {
-            "AAPL": Quote(last=100.0, as_of=NOW),
-            "2330.TW": Quote(last=2445.0, as_of=NOW),
+            "AAPL": Quote(last=100.0, as_of=NOW, received_at=NOW, market_data_type=1),
+            "2330.TW": Quote(last=2445.0, as_of=NOW, received_at=NOW, market_data_type=1),
         },
         "fx_to_base": {"TWD": 0.244, "HKD": 1.0, "USD": 1.0, "JPY": 0.05},
     }
@@ -115,33 +119,49 @@ def _ctx(**kwargs: object) -> GateContext:
     if caller_now and not caller_quotes:
         moment = payload["now"]
         payload["quotes"] = {
-            symbol: Quote(last=row.last, as_of=moment) for symbol, row in payload["quotes"].items()
+            symbol: Quote(
+                last=row.last,
+                as_of=moment,
+                received_at=moment,
+                market_data_type=row.market_data_type,
+                source=row.source,
+                data_type=row.data_type,
+            )
+            for symbol, row in payload["quotes"].items()
         }
+    if "expected_account" not in kwargs and not os.environ.get("IBKR_PAPER_ACCOUNT"):
+        accounts = payload.get("accounts")
+        if isinstance(accounts, tuple) and len(accounts) == 1:
+            payload["expected_account"] = accounts[0]
+        else:
+            payload["expected_account"] = "DU1234567"
     return GateContext(**payload)
 
 
 def test_r0_rejects_non_du_mixed_accounts_and_real_ports(tmp_path) -> None:
     with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
-        AccountGuard(4002).observe(["U1234567"])
+        AccountGuard(4002)
     with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
-        AccountGuard(4002).observe(["DU1234567", "U999"])
+        AccountGuard(4002, "DU1234567").observe(["U1234567"])
+    with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
+        AccountGuard(4002, "DU1234567").observe(["DU1234567", "U999"])
     for port in (4001, 7496):  # refused: paper_only
-        with pytest.raises(PaperAccountError, match="R0_LIVE_PORT"):
+        with pytest.raises(PaperAccountError, match="R0_FORBIDDEN_PORT"):
             AccountGuard(port)
     with pytest.raises(ValidationError):
         Settings(ibkr_account="U1234567")  # refused: paper_only
 
 
 def test_paper_account_pattern_accepts_one_optional_letter() -> None:
-    AccountGuard(4002).observe(["DUR243736"])
-    AccountGuard(4002).observe(["DU1234567"])
+    AccountGuard(4002, "DUR243736").observe(["DUR243736"])
+    AccountGuard(4002, "DU1234567").observe(["DU1234567"])
     assert RiskGate(_ctx(accounts=("DUR243736",))).allow(_buy()) is None
     assert RiskGate(_ctx(accounts=("DU1234567",))).allow(_buy()) is None
     assert Settings(ibkr_account="DUR243736").ibkr_account == "DUR243736"
     assert Settings(ibkr_paper_account="DU1234567").ibkr_paper_account == "DU1234567"
     for refused in ("U1234567", "DUX", "DURR123"):
         with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
-            AccountGuard(4002).observe([refused])
+            AccountGuard(4002, refused).observe([refused])
         with pytest.raises(RiskRejected, match="R0_NOT_PAPER_ACCOUNT"):
             RiskGate(_ctx(accounts=(refused,))).allow(_buy())
         with pytest.raises(ValidationError):
@@ -157,10 +177,12 @@ def test_paper_account_pin_must_be_the_only_account(tmp_path, monkeypatch) -> No
     assert pinned is None
 
     async def refused(accounts: list[str], home: Path) -> None:
-        broker = IbkrBroker(MockClient(accounts), trading_home=home)
+        client = MockClient(accounts)
+        broker = IbkrBroker(client, trading_home=home)
 
         with pytest.raises(PaperAccountError, match="R0_ACCOUNTS_CHANGED"):
             await broker.place(_buy(account="DUR243736"))
+        assert client.disconnected
         with pytest.raises(PaperAccountError, match="R0_ACCOUNTS_CHANGED"):
             await broker.modify("cid-1", 101.0, account="DUR243736")
         await broker.cancel("cid-1")
@@ -176,7 +198,7 @@ def test_paper_account_pin_must_be_the_only_account(tmp_path, monkeypatch) -> No
 
 def test_mid_session_account_change_blocks_orders_but_not_cancels(tmp_path) -> None:
     client = MockClient(["DU1234567"])
-    broker = IbkrBroker(client, trading_home=tmp_path)
+    broker = IbkrBroker(client, trading_home=tmp_path, expected_account="DU1234567")
 
     async def scenario() -> None:
         await broker.place(_buy(account="DU1234567"))
@@ -218,7 +240,16 @@ def test_gate_rules_and_reapproval() -> None:
         RiskGate(_ctx()).allow(_buy(limit_price=110))
     with pytest.raises(RiskRejected, match="R21"):
         RiskGate(_ctx(macro_blackout=True)).allow(_buy())
-    stale = _ctx(quotes={"AAPL": Quote(last=100, as_of=NOW - timedelta(seconds=11))})
+    stale = _ctx(
+        quotes={
+            "AAPL": Quote(
+                last=100,
+                as_of=NOW,
+                received_at=NOW - timedelta(seconds=11),
+                market_data_type=1,
+            )
+        }
+    )
     with pytest.raises(RiskRejected, match="R22"):
         RiskGate(stale).allow(_buy())
     mismatch = _ctx(approved_hash="sha256:" + "ab" * 32)
@@ -285,8 +316,8 @@ def test_session_open_price_buffer_and_disaster_stop() -> None:
         last=100.2,
         decision_ref=100,
     )
-    assert fallback.ref_price_mode == "live_quote"
-    assert fallback.ref_price_at_submit == pytest.approx(100.1)
+    assert fallback.ready is False
+    assert fallback.reason == "OPEN_UNAVAILABLE"
     assert protective_stop_price(100, 0.06) == pytest.approx(91)
     assert protective_stop_price(100, None) == pytest.approx(85)
 
@@ -328,10 +359,11 @@ def test_journal_why_and_approval_and_heartbeat(tmp_path) -> None:
     assert traced["spec_hash"].endswith("ab" * 32)
     assert traced["strategy_id"] == "sig_trend"
     payload = {"symbol": "AAPL", "quantity": 10, "limit_price": 100}
-    queue_order(tmp_path, "ord-1", payload)
+    queued = queue_order(tmp_path, "ord-1", payload)
+    stored = json.loads(queued.read_text(encoding="utf-8"))
     with pytest.raises(Exception, match="hash"):
         approve(tmp_path, "ord-1", "0" * 12)
-    decided = approve(tmp_path, "ord-1", hash12(order_hash(payload)))
+    decided = approve(tmp_path, "ord-1", hash12(stored["order_hash"]))
     assert decided["status"] == "APPROVED"
     assert needs_reapproval(100, 102) is True
     assert needs_reapproval(100, 101) is False
@@ -408,6 +440,7 @@ def test_contract_maps_2330_and_credentials_stay_with_the_launcher(tmp_path, mon
     text = written.read_text(encoding="utf-8")
     assert "TradingMode=paper" in text
     assert "OverrideTwsApiPort=4002" in text
+    assert "ReadOnlyApi=yes" in text
     assert "paper-user" in text
     assert "sekret-value" in text
     assert written.stat().st_mode & 0o777 == 0o600
@@ -556,7 +589,12 @@ def test_order_ref_state_machine_and_unknown_reconciliation(tmp_path) -> None:
     with pytest.raises(RiskRejected, match="UNKNOWN_ORDER"):
         RiskGate(ctx).allow(_buy(intent_id="intent-9"))
     other = _buy(symbol="MSFT", client_id="cid-msft", intent_id="intent-msft")
-    ctx.quotes["MSFT"] = Quote(last=100.0, as_of=ctx.now)
+    ctx.quotes["MSFT"] = Quote(
+        last=100.0,
+        as_of=ctx.now,
+        received_at=ctx.now,
+        market_data_type=1,
+    )
     assert RiskGate(ctx).allow(other) is None
     machine.transition(first, "FILLED")
     assert machine.unknown_symbols() == frozenset()

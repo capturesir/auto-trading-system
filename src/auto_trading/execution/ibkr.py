@@ -24,6 +24,7 @@ from auto_trading.config import Settings
 from auto_trading.execution.contracts import map_contract
 from auto_trading.execution.r0 import AccountGuard, latch_kill_switch
 from auto_trading.execution.stops import cancel_keeps_protective
+from auto_trading.risk.gate import MAX_QUOTE_DELAY_SEC, RiskRejected
 
 
 class IbkrBroker:
@@ -45,6 +46,9 @@ class IbkrBroker:
         def _trip(code: str) -> None:
             if trading_home is not None:
                 latch_kill_switch(trading_home, code)
+            disconnect = getattr(client, "disconnect", None)
+            if callable(disconnect):
+                disconnect()
 
         self.guard = AccountGuard(port, expected_account, on_violation=_trip)
 
@@ -74,6 +78,9 @@ class IbkrBroker:
         """Third R0 check, immediately before the client submits."""
         await self._snapshot(intent.account)
         self._require_client()
+        blocked = _quote_block(intent)
+        if blocked:
+            raise RiskRejected(blocked)
         spec = map_contract(intent.symbol)
         order = {
             "client_id": intent.client_id,
@@ -90,6 +97,7 @@ class IbkrBroker:
             "quote_data_type": intent.quote_data_type,
             "quote_age_sec": intent.quote_age_sec,
             "quote_delay_sec": intent.quote_delay_sec,
+            "market_data_type": intent.quote_market_data_type,
         }
         return await self.client.place_order(order)
 
@@ -130,6 +138,21 @@ class IbkrBroker:
             raise ConnectionError("paper gateway is not connected")
 
 
+def _quote_block(intent: OrderIntent) -> str | None:
+    """Public prices and market-data type 2 never reach the broker."""
+    if intent.protective:
+        return None
+    if intent.quote_source == "yahoo" or intent.quote_data_type == "public":
+        return "R22"
+    if intent.quote_market_data_type == 2:
+        return "R22"
+    if intent.quote_data_type == "delayed" and intent.quote_market_data_type not in (3, 4):
+        return "R22"
+    if intent.quote_delay_sec is not None and intent.quote_delay_sec > MAX_QUOTE_DELAY_SEC:
+        return "QUOTE_DELAY_EXCEEDED"
+    return None
+
+
 class PaperGateway:
     """Real ``ib_async`` session. Not constructed by tests or CI.
 
@@ -156,6 +179,7 @@ class PaperGateway:
 
         def _trip(code: str) -> None:
             latch_kill_switch(self.settings.trading_home, code)
+            ib.disconnect()
 
         AccountGuard(
             self.settings.ibkr_port,

@@ -101,8 +101,6 @@ def test_env_example_lists_names_only() -> None:
         "IBKR_CLIENT_ID",
         "IBKR_ACCOUNT",
         "IBKR_PAPER_ACCOUNT",
-        "IBKR_PAPER_USERNAME",
-        "IBKR_PAPER_PASSWORD",
         "IB_CLIENT_ID_EXEC",
         "IB_CLIENT_ID_RECON",
         "IB_CLIENT_ID_REPORT",

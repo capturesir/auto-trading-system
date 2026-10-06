@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from auto_trading.jsonutil import sha256_prefixed
+from auto_trading.portfolio.journal import TradeJournal
+
+APPROVAL_TIMEOUT = timedelta(minutes=15)
+_HASH_SKIP = frozenset({"order_hash", "status", "decided_at"})
 
 
 class ApprovalError(Exception):
@@ -27,10 +32,20 @@ def hash12(digest: str) -> str:
     return digest.removeprefix("sha256:")[:12]
 
 
+def _canonical(document: dict[str, Any]) -> dict[str, Any]:
+    """Fields that ``approve`` hashes again. Status is not part of the order."""
+    return {key: value for key, value in document.items() if key not in _HASH_SKIP}
+
+
 def queue_order(trading_home: Path, order_id: str, payload: dict[str, Any]) -> Path:
     """Write ``approvals/pending/<id>.json``."""
-    digest = order_hash(payload)
-    document = {**payload, "order_id": order_id, "order_hash": digest, "status": "PENDING_APPROVAL"}
+    document = {
+        **payload,
+        "order_id": order_id,
+        "status": "PENDING_APPROVAL",
+        "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+    }
+    document["order_hash"] = order_hash(_canonical(document))
     folder = trading_home / "approvals" / "pending"
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / f"{order_id}.json"
@@ -41,15 +56,39 @@ def queue_order(trading_home: Path, order_id: str, payload: dict[str, Any]) -> P
     return target
 
 
-def approve(trading_home: Path, order_id: str, given_hash: str) -> dict[str, Any]:
-    """Move a pending file to ``approvals/decided`` when the hash matches."""
+def approve(
+    trading_home: Path,
+    order_id: str,
+    given_hash: str,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Recompute the order hash, enforce the timeout, and write an audit row."""
     source = trading_home / "approvals" / "pending" / f"{order_id}.json"
     if not source.is_file():
         raise ApprovalError("missing pending order")
     document = json.loads(source.read_text(encoding="utf-8"))
-    if hash12(document["order_hash"]) != given_hash:
+    fresh = order_hash(_canonical(document))
+    if fresh != document.get("order_hash") or hash12(fresh) != given_hash:
         raise ApprovalError("hash mismatch")
+    moment = now or datetime.now(UTC)
+    created_raw = document.get("created_at")
+    if not created_raw:
+        raise ApprovalError("approval timeout")
+    created = datetime.fromisoformat(created_raw)
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    if moment - created > APPROVAL_TIMEOUT:
+        raise ApprovalError("approval timeout")
     document["status"] = "APPROVED"
+    document["decided_at"] = moment.isoformat(timespec="seconds")
+    TradeJournal(trading_home).record_approval(
+        order_id=order_id,
+        order_hash=fresh,
+        status="APPROVED",
+        detail={"given_hash": given_hash},
+        when=moment,
+    )
     folder = trading_home / "approvals" / "decided"
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / f"{order_id}.json"

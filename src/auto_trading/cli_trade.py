@@ -71,10 +71,12 @@ def resume(home: Path, *, reset_hwm: bool, local_terminal: bool) -> str:
             json.dumps(account, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        TradeJournal(home).audit(
+        journal = TradeJournal(home)
+        journal.audit(
             "reset_hwm",
             {"old_hwm": hwm, "new_hwm": nlv, "by": "user"},
         )
+        journal.record_hwm(hwm=nlv, nlv=nlv, reason="reset_hwm", detail={"old_hwm": hwm})
     switch = home / "KILL_SWITCH"
     if switch.exists():
         switch.unlink()

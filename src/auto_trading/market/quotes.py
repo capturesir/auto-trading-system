@@ -30,10 +30,16 @@ class MarketDataError(Exception):
 
 
 def data_type_from_ibkr(market_data_type: int) -> str:
-    """Map an IBKR market data type. ``1`` is realtime. ``3`` is delayed."""
+    """Map an IBKR market data type.
+
+    ``1`` is realtime. ``3`` and ``4`` are delayed and are usable on paper.
+    ``2`` is rejected. There is no setting that accepts ``2``.
+    """
     if market_data_type == 1:
         return "realtime"
-    return "delayed"
+    if market_data_type in (3, 4):
+        return "delayed"
+    return "rejected"
 
 
 def quote_from_ibkr(
@@ -62,6 +68,7 @@ def quote_from_ibkr(
         data_type=kind,
         delayed=kind == "delayed",
         received_at=received_at,
+        market_data_type=market_data_type,
     )
 
 

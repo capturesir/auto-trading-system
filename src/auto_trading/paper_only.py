@@ -11,8 +11,32 @@ import re
 from pathlib import Path
 
 _LIVE = "liv" + "e"
-_REFUSAL = re.compile(
-    r"paper_only|refus|reject|forbidden|violation|must be null|不得|拒絕",
+_EXACT_ALLOW = frozenset(
+    {
+        "paper_only",
+        "refuse",
+        "refused",
+        "refuses",
+        "reject",
+        "rejected",
+        "forbidden",
+        "violation",
+    }
+)
+_PHRASES = ("must be null", "不得", "拒絕")
+_HARD_ASSIGN = re.compile(
+    "live_"
+    + "mode"
+    + r"\s*=\s*"
+    + "true"
+    + "|port"
+    + r"\s*=\s*"
+    + "40"
+    + "01"
+    + "|port"
+    + r"\s*=\s*"
+    + "749"
+    + "6",
     re.IGNORECASE,
 )
 _MULTIPLIER_OK = re.compile(
@@ -38,7 +62,13 @@ def _needles() -> list[str]:
 
 
 def line_allowed(line: str) -> bool:
-    """True when ``line`` does not enable a real account."""
+    """True when ``line`` does not enable a real account.
+
+    Refusal tokens are whole words. A mode assignment or a forbidden port
+    assignment fails even when a refusal word is also on the line.
+    """
+    if _HARD_ASSIGN.search(line):
+        return False
     scrubbed = re.sub("upside_" + _LIVE, "", line, flags=re.IGNORECASE)
     scrubbed = re.sub(_LIVE + r"[ _]?quote", "", scrubbed, flags=re.IGNORECASE)
     # Paper Gateway login names are not a real-account switch. A bare paper flag still fails.
@@ -49,9 +79,12 @@ def line_allowed(line: str) -> bool:
     multiplier = _LIVE + "_size_multiplier"
     if multiplier in line and not _MULTIPLIER_OK.search(line):
         return False
-    if any(re.search(needle, scrubbed, re.IGNORECASE) for needle in _needles()):
-        return bool(_REFUSAL.search(line))
-    return True
+    if not any(re.search(needle, scrubbed, re.IGNORECASE) for needle in _needles()):
+        return True
+    words = {token.lower() for token in re.findall(r"[A-Za-z0-9_]+", line)}
+    if words & _EXACT_ALLOW:
+        return True
+    return any(phrase in line for phrase in _PHRASES)
 
 
 def scan_tree(root: Path) -> list[str]:
@@ -69,7 +102,20 @@ def scan_tree(root: Path) -> list[str]:
         "build",
         ".eggs",
     }
-    suffixes = {".py", ".md", ".yml", ".yaml", ".json", ".toml", ".txt", ".example"}
+    suffixes = {
+        ".py",
+        ".md",
+        ".yml",
+        ".yaml",
+        ".json",
+        ".toml",
+        ".txt",
+        ".example",
+        ".ini",
+        ".sh",
+        ".service",
+        ".template",
+    }
     names = {".gitignore", ".env.example"}
     findings: list[str] = []
     for path in sorted(root.rglob("*")):

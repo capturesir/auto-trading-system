@@ -92,6 +92,80 @@ class TradeJournal:
                 BEGIN
                     SELECT RAISE(ABORT, 'order_events is append-only');
                 END;
+                CREATE TABLE IF NOT EXISTS risk_checks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts_utc TEXT NOT NULL,
+                    intent_id TEXT,
+                    symbol TEXT,
+                    code TEXT,
+                    detail_json TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS risk_checks_no_update
+                BEFORE UPDATE ON risk_checks
+                BEGIN
+                    SELECT RAISE(ABORT, 'risk_checks is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS risk_checks_no_delete
+                BEFORE DELETE ON risk_checks
+                BEGIN
+                    SELECT RAISE(ABORT, 'risk_checks is append-only');
+                END;
+                CREATE TABLE IF NOT EXISTS approvals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts_utc TEXT NOT NULL,
+                    order_id TEXT NOT NULL,
+                    order_hash TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    detail_json TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS approvals_no_update
+                BEFORE UPDATE ON approvals
+                BEGIN
+                    SELECT RAISE(ABORT, 'approvals is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS approvals_no_delete
+                BEFORE DELETE ON approvals
+                BEGIN
+                    SELECT RAISE(ABORT, 'approvals is append-only');
+                END;
+                CREATE TABLE IF NOT EXISTS hwm_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts_utc TEXT NOT NULL,
+                    hwm REAL NOT NULL,
+                    nlv REAL,
+                    reason TEXT NOT NULL,
+                    detail_json TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS hwm_history_no_update
+                BEFORE UPDATE ON hwm_history
+                BEGIN
+                    SELECT RAISE(ABORT, 'hwm_history is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS hwm_history_no_delete
+                BEFORE DELETE ON hwm_history
+                BEGIN
+                    SELECT RAISE(ABORT, 'hwm_history is append-only');
+                END;
+                CREATE TABLE IF NOT EXISTS anomaly_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts_utc TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    detail_json TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS anomaly_events_no_update
+                BEFORE UPDATE ON anomaly_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'anomaly_events is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS anomaly_events_no_delete
+                BEFORE DELETE ON anomaly_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'anomaly_events is append-only');
+                END;
+                CREATE TABLE IF NOT EXISTS adr_controlled_set (
+                    symbol TEXT PRIMARY KEY,
+                    recorded_at TEXT NOT NULL
+                );
                 """
             )
 
@@ -233,6 +307,94 @@ class TradeJournal:
                 """,
                 (order_id, when.isoformat(timespec="seconds"), state),
             )
+
+    def record_risk_check(
+        self,
+        *,
+        symbol: str,
+        code: str | None,
+        intent_id: str | None = None,
+        detail: dict[str, Any] | None = None,
+        when: datetime | None = None,
+    ) -> None:
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO risk_checks (ts_utc, intent_id, symbol, code, detail_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (ts, intent_id, symbol, code, json.dumps(detail or {}, ensure_ascii=False)),
+            )
+
+    def record_approval(
+        self,
+        *,
+        order_id: str,
+        order_hash: str,
+        status: str,
+        detail: dict[str, Any] | None = None,
+        when: datetime | None = None,
+    ) -> None:
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO approvals (ts_utc, order_id, order_hash, status, detail_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (ts, order_id, order_hash, status, json.dumps(detail or {}, ensure_ascii=False)),
+            )
+        self.audit("approval", {"order_id": order_id, "status": status}, when=when)
+
+    def record_hwm(
+        self,
+        *,
+        hwm: float,
+        nlv: float | None,
+        reason: str,
+        detail: dict[str, Any] | None = None,
+        when: datetime | None = None,
+    ) -> None:
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO hwm_history (ts_utc, hwm, nlv, reason, detail_json)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (ts, hwm, nlv, reason, json.dumps(detail or {}, ensure_ascii=False)),
+            )
+
+    def record_anomaly(
+        self,
+        *,
+        kind: str,
+        detail: dict[str, Any] | None = None,
+        when: datetime | None = None,
+    ) -> None:
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO anomaly_events (ts_utc, kind, detail_json) VALUES (?, ?, ?)",
+                (ts, kind, json.dumps(detail or {}, ensure_ascii=False)),
+            )
+
+    def remember_controlled(self, symbols: set[str], *, when: datetime | None = None) -> None:
+        """Replace the last controlled ADR set. Used when the map is valid."""
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute("DELETE FROM adr_controlled_set")
+            conn.executemany(
+                "INSERT INTO adr_controlled_set (symbol, recorded_at) VALUES (?, ?)",
+                [(symbol, ts) for symbol in sorted(symbols)],
+            )
+
+    def last_controlled(self) -> frozenset[str]:
+        """Symbols stored the last time the ADR map loaded."""
+        with self._connect() as conn:
+            rows = conn.execute("SELECT symbol FROM adr_controlled_set").fetchall()
+        return frozenset(str(row["symbol"]) for row in rows)
 
     def why(self, key: str) -> dict[str, Any]:
         """Trace a fill id, client id, or intent id back to the strategy hash."""
