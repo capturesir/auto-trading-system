@@ -127,6 +127,48 @@ def test_r0_rejects_non_du_mixed_accounts_and_real_ports(tmp_path) -> None:
         Settings(ibkr_account="U1234567")  # refused: paper_only
 
 
+def test_paper_account_pattern_accepts_one_optional_letter() -> None:
+    AccountGuard(4002).observe(["DUR243736"])
+    AccountGuard(4002).observe(["DU1234567"])
+    assert RiskGate(_ctx(accounts=("DUR243736",))).allow(_buy()) is None
+    assert RiskGate(_ctx(accounts=("DU1234567",))).allow(_buy()) is None
+    assert Settings(ibkr_account="DUR243736").ibkr_account == "DUR243736"
+    assert Settings(ibkr_paper_account="DU1234567").ibkr_paper_account == "DU1234567"
+    for refused in ("U1234567", "DUX", "DURR123"):
+        with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
+            AccountGuard(4002).observe([refused])
+        with pytest.raises(RiskRejected, match="R0_NOT_PAPER_ACCOUNT"):
+            RiskGate(_ctx(accounts=(refused,))).allow(_buy())
+        with pytest.raises(ValidationError):
+            Settings(ibkr_account=refused)  # refused: paper_only
+        with pytest.raises(ValidationError):
+            Settings(ibkr_paper_account=refused)  # refused: paper_only
+
+
+def test_paper_account_pin_must_be_the_only_account(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("IBKR_PAPER_ACCOUNT", "DUR243736")
+    AccountGuard(4002).observe(["DUR243736"])
+    pinned = RiskGate(_ctx(accounts=("DUR243736",))).allow(_buy(account="DUR243736"))
+    assert pinned is None
+
+    async def refused(accounts: list[str], home: Path) -> None:
+        broker = IbkrBroker(MockClient(accounts), trading_home=home)
+
+        with pytest.raises(PaperAccountError, match="R0_ACCOUNTS_CHANGED"):
+            await broker.place(_buy(account="DUR243736"))
+        with pytest.raises(PaperAccountError, match="R0_ACCOUNTS_CHANGED"):
+            await broker.modify("cid-1", 101.0, account="DUR243736")
+        await broker.cancel("cid-1")
+        assert (home / "KILL_SWITCH").read_text(encoding="utf-8").startswith("R0_ACCOUNTS_CHANGED")
+
+    asyncio.run(refused(["DU1234567"], tmp_path / "mismatch"))
+    asyncio.run(refused(["DUR243736", "DU1234567"], tmp_path / "extra"))
+    with pytest.raises(RiskRejected, match="R0_ACCOUNTS_CHANGED"):
+        RiskGate(_ctx(accounts=("DU1234567",))).allow(_buy())
+    with pytest.raises(RiskRejected, match="R0_ACCOUNTS_CHANGED"):
+        RiskGate(_ctx(accounts=("DUR243736", "DU1234567"))).allow(_buy(account="DUR243736"))
+
+
 def test_mid_session_account_change_blocks_orders_but_not_cancels(tmp_path) -> None:
     client = MockClient(["DU1234567"])
     broker = IbkrBroker(client, trading_home=tmp_path)

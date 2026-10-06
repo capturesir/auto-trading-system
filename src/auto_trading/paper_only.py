@@ -44,6 +44,8 @@ def line_allowed(line: str) -> bool:
     # Paper Gateway login names are not a real-account switch. A bare paper flag still fails.
     scrubbed = re.sub("IBKR_" + "PAPER_USERNAME", "", scrubbed, flags=re.IGNORECASE)
     scrubbed = re.sub("IBKR_" + "PAPER_PASSWORD", "", scrubbed, flags=re.IGNORECASE)
+    # The account pin names one paper id. A bare paper flag still fails.
+    scrubbed = re.sub("IBKR_" + "PAPER_ACCOUNT", "", scrubbed, flags=re.IGNORECASE)
     multiplier = _LIVE + "_size_multiplier"
     if multiplier in line and not _MULTIPLIER_OK.search(line):
         return False

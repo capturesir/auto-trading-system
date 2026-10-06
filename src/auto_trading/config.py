@@ -14,6 +14,8 @@ from typing import Literal
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from auto_trading.paper_account import DU_ACCOUNT
+
 DEFAULT_SIGNALS_PATH = Path("/workspace/invest/signals.json")
 DEFAULT_DATABASE_PATH = Path("data/auto_trading.sqlite")
 DEFAULT_TRADING_HOME = Path("/workspace/trading")
@@ -46,6 +48,10 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("IBKR_ACCOUNT", "IB_ACCOUNT"),
     )
+    ibkr_paper_account: str = Field(
+        default="",
+        validation_alias=AliasChoices("IBKR_PAPER_ACCOUNT"),
+    )
     trading_home: Path = Field(default=DEFAULT_TRADING_HOME)
     base_currency: Literal["HKD", "USD"] = "HKD"
 
@@ -57,11 +63,13 @@ class Settings(BaseSettings):
             raise ValueError("port refused: paper_only; only 4002 and 7497 are accepted")
         return value
 
-    @field_validator("ibkr_account")
+    @field_validator("ibkr_account", "ibkr_paper_account")
     @classmethod
     def _paper_account_only(cls, value: str) -> str:
-        if value and not value.startswith("DU"):
-            raise ValueError("account refused: paper_only, expected account must start with DU")
+        # ``DU``, one optional letter, then digits. Other ids are refused: paper_only.
+        value = value.strip()
+        if value and DU_ACCOUNT.fullmatch(value) is None:
+            raise ValueError("account refused: paper_only")
         return value
 
 

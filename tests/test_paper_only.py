@@ -27,6 +27,9 @@ def test_scan_allows_the_price_metric_and_flags_a_switch() -> None:
     bad = "mode = " + '"' + "liv" + "e" + '"'
     assert line_allowed(bad) is False
     assert line_allowed(bad + "  # refused: paper_only")
+    assert line_allowed('os.environ["IBKR_PAPER_ACCOUNT"]')
+    bare = "IBKR_" + "PAPER"
+    assert line_allowed(bare + " = 1") is False
 
 
 def test_real_account_ports_are_refused() -> None:

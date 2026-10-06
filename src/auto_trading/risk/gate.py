@@ -15,7 +15,7 @@ from typing import Any
 from auto_trading.broker import OrderIntent
 from auto_trading.execution.contracts import UnsupportedInstrument, map_contract
 from auto_trading.execution.oms import order_ref
-from auto_trading.execution.r0 import DU_ACCOUNT, PAPER_PORTS
+from auto_trading.execution.r0 import DU_ACCOUNT, PAPER_PORTS, paper_account_pin
 from auto_trading.execution.risk_state import RiskConfigMismatch, verify_risk_limits_file
 from auto_trading.execution.sessions import BLOCK_ALL, session_window
 from auto_trading.risk.limits import EXPECTED_LIMITS
@@ -186,13 +186,18 @@ def _r0(intent: OrderIntent, ctx: GateContext) -> str | None:
         return "R0_LIVE_PORT"
     if not ctx.accounts or any(DU_ACCOUNT.fullmatch(account) is None for account in ctx.accounts):
         return "R0_NOT_PAPER_ACCOUNT"
-    if ctx.expected_account and ctx.expected_account not in ctx.accounts:
+    pin = paper_account_pin(ctx.expected_account)
+    if pin and DU_ACCOUNT.fullmatch(pin) is None:
         return "R0_NOT_PAPER_ACCOUNT"
+    if pin and frozenset(ctx.accounts) != {pin}:
+        return "R0_ACCOUNTS_CHANGED"
     baseline = ctx.baseline_accounts
     if baseline is not None and frozenset(ctx.accounts) != frozenset(baseline):
         return "R0_ACCOUNTS_CHANGED"
     if intent.account and DU_ACCOUNT.fullmatch(intent.account) is None:
         return "R0_NOT_PAPER_ACCOUNT"
+    if pin and intent.account and intent.account != pin:
+        return "R0_ACCOUNTS_CHANGED"
     return None
 
 

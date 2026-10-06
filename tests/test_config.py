@@ -28,7 +28,9 @@ def test_ibkr_settings_come_from_environment(monkeypatch: pytest.MonkeyPatch) ->
     assert settings.ibkr_port == 4002
     assert settings.ibkr_client_id == 7
     assert settings.ibkr_account == "DU1234567"
-    assert "ibkr_paper" not in Settings.model_fields  # refused: paper_only
+    assert settings.ibkr_paper_account == ""
+    assert "ibkr_paper_username" not in Settings.model_fields  # refused: paper_only
+    assert "ibkr_paper_password" not in Settings.model_fields  # refused: paper_only
     assert Settings.model_config.get("env_file") is None
 
 
@@ -41,7 +43,9 @@ def test_defaults_when_environment_is_unset() -> None:
     assert settings.ibkr_port == 4002
     assert settings.ibkr_client_id == 1
     assert settings.ibkr_account == ""
-    assert "ibkr_paper" not in Settings.model_fields  # refused: paper_only
+    assert settings.ibkr_paper_account == ""
+    assert "ibkr_paper_username" not in Settings.model_fields  # refused: paper_only
+    assert "ibkr_paper_password" not in Settings.model_fields  # refused: paper_only
     assert settings.trading_home == DEFAULT_TRADING_HOME
     assert settings.base_currency == "HKD"
 
@@ -59,7 +63,9 @@ def test_empty_env_vars_keep_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.database_path == DEFAULT_DATABASE_PATH
     assert settings.ibkr_port == 4002
     assert settings.ibkr_account == ""
-    assert "ibkr_paper" not in Settings.model_fields  # refused: paper_only
+    assert settings.ibkr_paper_account == ""
+    assert "ibkr_paper_username" not in Settings.model_fields  # refused: paper_only
+    assert "ibkr_paper_password" not in Settings.model_fields  # refused: paper_only
 
 
 def test_dotenv_file_is_not_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -94,6 +100,7 @@ def test_env_example_lists_names_only() -> None:
         "IBKR_PORT",
         "IBKR_CLIENT_ID",
         "IBKR_ACCOUNT",
+        "IBKR_PAPER_ACCOUNT",
         "IBKR_PAPER_USERNAME",
         "IBKR_PAPER_PASSWORD",
         "IB_CLIENT_ID_EXEC",

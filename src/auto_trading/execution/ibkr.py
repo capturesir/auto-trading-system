@@ -148,4 +148,14 @@ class PaperGateway:
             clientId=self.client_id,
         )
         self._ib = ib
-        return list(ib.managedAccounts())
+        accounts = list(ib.managedAccounts())
+
+        def _trip(code: str) -> None:
+            latch_kill_switch(self.settings.trading_home, code)
+
+        AccountGuard(
+            self.settings.ibkr_port,
+            self.settings.ibkr_paper_account,
+            on_violation=_trip,
+        ).observe(accounts)
+        return accounts
