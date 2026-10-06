@@ -67,6 +67,9 @@ class OrderIntent(BaseModel):
     stop_loss_pct: float | None = None
     protective: bool = False
     reduce_only: bool = False
+    quote_source: str | None = None
+    quote_data_type: str | None = None
+    quote_age_sec: float | None = None
 
 
 class OrderAck(BaseModel):

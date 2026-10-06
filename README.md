@@ -148,6 +148,10 @@ set +a
 
 交易日誌寫在 `TRADING_HOME/data/trading.db`（SQLite WAL），並追加 JSONL 與每月 CSV。`trade why` 由成交追到意圖、訊號和策略雜湊。
 
+報價先問 IBKR，失敗才用本機已有的 Yahoo chart 當公開價，不另加資料套件。會改走公開價的情況是錯誤 10197、354、10167，或請求逾時。每筆報價記下來源、型別（即時、延遲、公開）和時間。下單計價會記下當時用的來源。延遲行情（型別 3）在模擬盤可以用來算開盤限價，並寫進日誌。報價舊過停滯上限時，新開倉拒絕；保護性停損不受這條限制。10197 一開始和恢復時各寫一筆 `alerts/pending/`，讓使用者知道手機登入佔用了行情。
+
+韓國股票代碼維持六位數字，幣別 `KRW`，交易所改送 `KRX`。2026-10-06 用紙上帳戶對 `005930` / `KSE` / `KRW` 做 qualify，沒有回合約（ib_async 記成 Unknown contract）。`KRX` 還沒在這台 Gateway 上核對。帳戶若沒有韓國股票權限（Client Portal → Settings → Trading Permissions → Stocks → Korea），合約庫也會是空的。韓國居民以及 IBIN、IBSJ 的客戶不能開這個權限。
+
 ## 開發與測試
 
 需要 Python 3.12。

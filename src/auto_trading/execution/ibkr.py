@@ -86,6 +86,9 @@ class IbkrBroker:
             "limit_price": intent.limit_price,
             "tif": "DAY",
             "order_type": "LMT",
+            "quote_source": intent.quote_source,
+            "quote_data_type": intent.quote_data_type,
+            "quote_age_sec": intent.quote_age_sec,
         }
         return await self.client.place_order(order)
 

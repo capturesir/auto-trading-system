@@ -31,6 +31,11 @@ def chart_url(ticker: str) -> str:
     )
 
 
+def quote_url(ticker: str) -> str:
+    """Intraday chart used as the public last price. No new data package."""
+    return f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1m&range=1d"
+
+
 def _urllib_get(url: str) -> str:
     with urllib.request.urlopen(url, timeout=30) as response:
         return response.read().decode("utf-8")
@@ -81,6 +86,30 @@ def parse_chart(payload: dict[str, Any], *, ticker: str) -> list[dict[str, Any]]
     if not rows:
         raise DownloadError("chart contained no closes")
     return rows
+
+
+def parse_public_quote(payload: dict[str, Any], *, ticker: str) -> tuple[float, datetime]:
+    """Last price and its exchange timestamp from one chart payload."""
+    result = (payload.get("chart") or {}).get("result") or []
+    if not result:
+        raise DownloadError(f"public quote for {ticker} is empty")
+    meta = result[0].get("meta") or {}
+    price = meta.get("regularMarketPrice")
+    stamp = meta.get("regularMarketTime")
+    if price is None or stamp is None:
+        raise DownloadError(f"public quote for {ticker} has no last price")
+    return float(price), datetime.fromtimestamp(int(stamp), tz=UTC)
+
+
+def public_quote(
+    ticker: str,
+    *,
+    getter: Getter | None = None,
+) -> tuple[float, datetime]:
+    """Fetch one public last price through the existing Yahoo chart client."""
+    fetch = getter or _urllib_get
+    body = fetch(quote_url(ticker))
+    return parse_public_quote(json.loads(body), ticker=ticker)
 
 
 def download_chart(

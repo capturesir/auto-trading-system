@@ -56,12 +56,26 @@ class Held:
 
 @dataclass
 class Quote:
+    """One price. ``source`` is ibkr or yahoo. ``data_type`` is realtime, delayed, or public."""
+
     last: float
     as_of: datetime
     bid: float | None = None
     ask: float | None = None
     open_price: float | None = None
     delayed: bool = False
+    source: str = "ibkr"
+    data_type: str = "realtime"
+
+    def __post_init__(self) -> None:
+        if self.delayed and self.data_type == "realtime":
+            self.data_type = "delayed"
+        if self.data_type == "delayed":
+            self.delayed = True
+
+    def age_seconds(self, now: datetime) -> float:
+        """Seconds between the quote timestamp and ``now``."""
+        return (now - self.as_of).total_seconds()
 
 
 @dataclass
@@ -304,14 +318,14 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
 
 
 def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
+    if intent.protective:
+        return None
     quote = ctx.quotes.get(intent.symbol)
     price = _price(intent, ctx)
     if quote is None or price is None:
         return "R22"
-    if quote.delayed:
-        return "R22"
-    age = (ctx.now - quote.as_of).total_seconds()
-    if age > ctx.quote_stale_sec:
+    opening = intent.intent_type not in REDUCING and not intent.reduce_only
+    if opening and quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
         return "R22"
     if intent.limit_price is not None and quote.last:
         drift = abs(intent.limit_price / quote.last - 1)

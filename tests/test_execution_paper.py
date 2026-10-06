@@ -22,7 +22,7 @@ from auto_trading.execution.approvals import (
     order_hash,
     queue_order,
 )
-from auto_trading.execution.contracts import map_contract
+from auto_trading.execution.contracts import ib_contract_fields, map_contract, qualify_with
 from auto_trading.execution.heartbeat import heartbeat_alert_due, write_heartbeat
 from auto_trading.execution.ibkr import IbkrBroker
 from auto_trading.execution.pricing import session_open_limit
@@ -339,6 +339,27 @@ def test_journal_why_and_approval_and_heartbeat(tmp_path) -> None:
         {"AAPL": 1},
     )
     assert breaks[0].broker_qty == 2 and breaks[0].journal_qty == 1
+
+
+def test_korean_qualify_sends_krx_and_records_an_unknown_contract() -> None:
+    fields = ib_contract_fields("005930.KS")
+    assert fields == {
+        "symbol": "005930",
+        "secType": "STK",
+        "exchange": "KRX",
+        "currency": "KRW",
+    }
+    assert ib_contract_fields("035720.KQ")["exchange"] == "KRX"
+    assert map_contract("005930.KS").unverified is True
+
+    unknown = qualify_with("005930.KS", lambda _fields: [])
+    assert unknown["con_id"] is None
+    assert unknown["error"] == "Unknown contract"
+    assert unknown["fields"]["exchange"] == "KRX"
+
+    found = qualify_with("005930.KS", lambda _fields: [{"conId": 123456}])
+    assert found["con_id"] == 123456
+    assert found["error"] is None
 
 
 def test_contract_maps_2330_and_credentials_stay_with_the_launcher(tmp_path, monkeypatch) -> None:

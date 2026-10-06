@@ -2,16 +2,28 @@
 
 ``2330.TW`` maps to symbol ``2330`` on ``TWSE``. Exchange codes that have not
 been qualified against a paper Gateway are marked unverified for E1.
+
+Korean names use the six-digit local code, currency ``KRW``, and exchange
+``KRX``. On 2026-10-06 the paper Gateway's ``qualifyContracts`` for
+``005930`` / ``KSE`` / ``KRW`` returned no details; ib_async logs that as
+``Unknown contract``. ``KSE`` is the old venue code. SMART is not a
+documented Korea route. An empty qualify can also mean the account has no
+Korea stock permission (Client Portal, Trading Permissions, Stocks, Korea).
+Residents of Korea and IBIN or IBSJ clients cannot enable that permission.
+TODO: qualify ``KRX`` on the paper Gateway before treating the conId as known.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from auto_trading.market.instruments import describe
 
 # TODO E1 paper-account tests: qualifyContracts against Gateway before trusting these.
-UNVERIFIED_EXCHANGES = frozenset({"TWSE", "TPEX", "TSEJ", "KSE"})
+# KRX is the candidate after KSE returned Unknown contract on 2026-10-06.
+UNVERIFIED_EXCHANGES = frozenset({"TWSE", "TPEX", "TSEJ", "KSE", "KRX"})
 
 
 class UnsupportedInstrument(Exception):
@@ -51,9 +63,6 @@ def map_contract(ticker: str, *, allow_tpex: bool = False) -> ContractSpec:
     spec = describe(ticker)
     primary = None
     exchange = spec.ib_exchange
-    if ticker.endswith(".KS") or ticker.endswith(".KQ"):
-        primary = "KSE"
-        exchange = "SMART"
     unverified = exchange in UNVERIFIED_EXCHANGES or primary in UNVERIFIED_EXCHANGES
     return ContractSpec(
         symbol=ticker,
@@ -65,3 +74,28 @@ def map_contract(ticker: str, *, allow_tpex: bool = False) -> ContractSpec:
         lot_size=spec.lot_size,
         unverified=unverified,
     )
+
+
+def ib_contract_fields(ticker: str) -> dict[str, str]:
+    """Fields a qualify request would send. No network."""
+    spec = map_contract(ticker)
+    fields = {
+        "symbol": spec.ib_symbol,
+        "secType": "STK",
+        "exchange": spec.exchange,
+        "currency": spec.currency,
+    }
+    if spec.primary_exchange:
+        fields["primaryExchange"] = spec.primary_exchange
+    return fields
+
+
+def qualify_with(ticker: str, qualify: Callable[[dict[str, str]], list[Any]]) -> dict[str, Any]:
+    """Run ``qualify``. An empty list is ib_async's Unknown contract result."""
+    fields = ib_contract_fields(ticker)
+    found = qualify(fields)
+    if not found:
+        return {"fields": fields, "con_id": None, "error": "Unknown contract"}
+    row = found[0]
+    con_id = row["conId"] if isinstance(row, dict) else row
+    return {"fields": fields, "con_id": con_id, "error": None}
