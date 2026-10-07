@@ -19,7 +19,7 @@ from auto_trading.execution.oms import order_ref
 from auto_trading.execution.r0 import DU_ACCOUNT, PAPER_PORTS, paper_account_pin
 from auto_trading.execution.risk_state import RiskConfigMismatch, verify_risk_limits_file
 from auto_trading.execution.sessions import BLOCK_ALL, session_window
-from auto_trading.risk.adr_premium import r28_result
+from auto_trading.risk.adr_premium import check_buy
 from auto_trading.risk.limits import EXPECTED_LIMITS
 
 log = logging.getLogger(__name__)
@@ -144,6 +144,9 @@ class GateContext:
     adr_last_db: frozenset[str] = frozenset()
     adr_rule: dict[str, Any] | None = None
     adr_expected_rule: dict[str, Any] | None = None
+    adr_map_path: Path | None = None
+    adr_state_path: Path | None = None
+    adr_expected_path: Path | None = None
     r23_note: str | None = None
     trading_home: Path | None = None
     unknown_symbols: frozenset[str] = frozenset()
@@ -175,7 +178,7 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     file_code = _risk_file(ctx)
     if file_code and not reducing:
         return file_code
-    if ctx.kill_switch:
+    if _killed(ctx):
         return "R18"
     if not ctx.connected or not ctx.recon_ok:
         return "R17"
@@ -286,7 +289,7 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
     if ctx.macro_blackout and market in {"US", "JP"}:
         return "R21"
     if intent.confidence is not None and intent.confidence < int(ctx.limits["min_confidence"]):
-        return "R19"
+        return "LOW_CONFIDENCE"
     if ctx.signal_expired or (ctx.signal_side is not None and ctx.signal_side != "BUY"):
         return "SIGNAL_NOT_BUY"
     floor = int(ctx.limits["min_confidence"])
@@ -351,25 +354,45 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
     return None
 
 
+def _killed(ctx: GateContext) -> bool:
+    """R18 reads the kill-switch file, not only a flag the caller remembered."""
+    if ctx.kill_switch:
+        return True
+    if ctx.trading_home is None:
+        return False
+    return (ctx.trading_home / "KILL_SWITCH").is_file()
+
+
 def _r28(intent: OrderIntent, ctx: GateContext) -> str | None:
-    """ADR premium pause. Exceptions become a refusal, not a crash."""
+    """Paper BUY entries only. The reference guard decides; exceptions pause."""
+    if intent.mode != "paper" or intent.protective or intent.reduce_only:
+        return None
+    if intent.side.value != "BUY" or intent.intent_type not in {"ENTRY", "ADD"}:
+        return None
+    root = Path(__file__).resolve().parents[3]
+    map_path = ctx.adr_map_path or (root / "config" / "adr_map.csv")
+    expected_path = ctx.adr_expected_path or (root / "config" / "adr_premium_rule_expected.json")
+    if ctx.adr_state_path is not None:
+        state_path = ctx.adr_state_path
+    elif ctx.trading_home is not None:
+        state_path = ctx.trading_home / "state" / "adr_premium_state.json"
+    else:
+        state_path = Path("/nonexistent-adr-premium-state.json")
     try:
-        state = None if ctx.adr_state_missing else {"paused": sorted(ctx.adr_paused)}
-        return r28_result(
-            mode="paper" if ctx.registry_mode == "paper" else ctx.registry_mode,
-            side=intent.side.value,
-            intent_type=intent.intent_type,
-            symbol=intent.symbol,
-            protective=intent.protective,
-            reduce_only=intent.reduce_only,
-            state=state,
-            map_symbols=ctx.adr_map_symbols,
-            last_db=ctx.adr_last_db,
-            rule=ctx.adr_rule,
-            expected_rule=ctx.adr_expected_rule,
+        allowed, reason, detail, _session, cause = check_buy(
+            intent.symbol,
+            intent.side.value,
+            ctx.now.isoformat(),
+            str(state_path),
+            str(map_path),
+            str(expected_path),
         )
     except Exception:
         return "ADR_PREMIUM_PAUSED"
+    if allowed:
+        return None
+    log.info("r28 detail=%s cause=%s", detail, cause)
+    return reason or "ADR_PREMIUM_PAUSED"
 
 
 def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:

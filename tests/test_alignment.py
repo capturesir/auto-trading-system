@@ -11,7 +11,12 @@ import pytest
 from auto_trading.backtest.veto import UnsupportedVetoSchema, load_veto_document
 from auto_trading.broker import OrderIntent, OrderSide
 from auto_trading.execution.approvals import ApprovalError, approve, hash12, queue_order
-from auto_trading.execution.risk_state import build_risk_limits, write_risk_limits
+from auto_trading.execution.risk_state import (
+    RiskConfigMismatch,
+    build_risk_limits,
+    verify_risk_limits_file,
+    write_risk_limits,
+)
 from auto_trading.portfolio.journal import TradeJournal
 from auto_trading.risk import GateContext, Held, Quote, RiskGate, RiskRejected
 
@@ -40,17 +45,21 @@ def test_approval_recomputes_hash_times_out_and_audits(tmp_path) -> None:
     stored["order_hash"] = "sha256:" + "ab" * 32
     queued.write_text(json.dumps(stored), encoding="utf-8")
     with pytest.raises(ApprovalError, match="hash"):
-        approve(tmp_path, "ord-9", "ab" * 6)
+        approve(tmp_path, "ord-9", "ab" * 6, by="user", channel="cli")
 
     fresh = queue_order(tmp_path, "ord-10", {"symbol": "AAPL", "quantity": 1, "limit_price": 10})
     document = json.loads(fresh.read_text(encoding="utf-8"))
     created = datetime.fromisoformat(document["created_at"])
-    late = created + timedelta(minutes=16)
+    late = created + timedelta(minutes=121)
     soon = created + timedelta(minutes=1)
     digest = hash12(document["order_hash"])
     with pytest.raises(ApprovalError, match="timeout"):
-        approve(tmp_path, "ord-10", digest, now=late)
-    decided = approve(tmp_path, "ord-10", digest, now=soon)
+        approve(tmp_path, "ord-10", digest, by="user", channel="cli", now=late)
+    decided = approve(tmp_path, "ord-10", digest, by="user", channel="cli", now=soon)
+    assert decided["approved_by"] == "user"
+    assert decided["channel"] == "cli"
+    submit_by = datetime.fromisoformat(decided["submit_by"])
+    assert submit_by - soon == timedelta(minutes=30)
     assert decided["status"] == "APPROVED"
     with sqlite3.connect(tmp_path / "data" / "trading.db") as conn:
         row = conn.execute("SELECT status FROM approvals").fetchone()
@@ -103,6 +112,44 @@ def _ctx(home, **kwargs: object) -> GateContext:
     }
     payload.update(kwargs)
     return GateContext(**payload)
+
+
+def test_snapshot_breakers_strict_file_and_kill_switch_file(tmp_path) -> None:
+    payload = build_risk_limits(
+        now=NOW,
+        nlv=890_000,
+        account="DU1234567",
+        hwm=1_000_000,
+        day_start_nlv=1_000_000,
+        recon_freeze=True,
+        trigger="manual",
+    )
+    assert payload["generated_at_utc"] == payload["as_of_utc"]
+    assert payload["trigger"] == "manual"
+    assert payload["risk_day_start_nlv"] == 1_000_000
+    assert payload["hwm_base"] == 1_000_000
+    assert payload["drawdown_pct"] == pytest.approx(-0.11)
+    account = payload["accounts"][0]
+    assert account["breakers"]["r8_daily_halt"] is True
+    assert account["breakers"]["r9_state"] == "halt"
+    assert account["breakers"]["recon_freeze"] is True
+    assert "daily_loss_headroom_base" in account["headroom"]
+    assert build_risk_limits(now=NOW, nlv=1, r0_violation=True)["accounts"] == []
+    write_risk_limits(tmp_path, build_risk_limits(now=NOW, nlv=1_000_000, account="DU1234567"))
+    path = tmp_path / "state" / "risk_limits.json"
+    path.write_text('{"a": 1, "a": 2}\n', encoding="utf-8")
+    with pytest.raises(RiskConfigMismatch):
+        verify_risk_limits_file(tmp_path)
+    (tmp_path / "KILL_SWITCH").write_text("manual\n", encoding="utf-8")
+    held = _ctx(tmp_path, positions=[Held("AAPL", 5, 500)], kill_switch=False)
+    with pytest.raises(RiskRejected, match="R18"):
+        RiskGate(held).allow(_buy(side=OrderSide.SELL, intent_type="EXIT", parent_intent_id="p"))
+    quiet = _buy(confidence=10)
+    clean = _ctx(tmp_path)
+    (tmp_path / "KILL_SWITCH").unlink()
+    write_risk_limits(tmp_path, build_risk_limits(now=NOW, nlv=1_000_000, account="DU1234567"))
+    with pytest.raises(RiskRejected, match="LOW_CONFIDENCE"):
+        RiskGate(clean).allow(quiet)
 
 
 def test_missing_approved_hash_limits_file_type2_and_adr_pause(tmp_path) -> None:

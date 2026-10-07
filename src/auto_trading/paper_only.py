@@ -1,8 +1,8 @@
 """Source scan that refuses real-account switches.
 
-``upside_live`` is a price metric and is allowlisted. A quote placeholder
-may say ``live quote``. Everything else that names a real-account mode, a
-real-account port, or a deleted promotion event must sit on a refusal line.
+Price-metric names in ``ci/r0_live_allowlist.txt`` are the only tokens that
+may contain that stem. A refusal comment does not exempt any other use.
+The port reject code does not use that stem.
 """
 
 from __future__ import annotations
@@ -61,21 +61,40 @@ def _needles() -> list[str]:
     ]
 
 
+def _allow_tokens() -> list[str]:
+    """Exact identifiers that may contain the stem. Longer names go first."""
+    path = Path(__file__).resolve().parents[2] / "ci" / "r0_live_allowlist.txt"
+    tokens: list[str] = []
+    if path.is_file():
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            token = raw.strip()
+            if token and not token.startswith("#"):
+                tokens.append(token)
+    return sorted(tokens, key=len, reverse=True)
+
+
 def line_allowed(line: str) -> bool:
     """True when ``line`` does not enable a real account.
 
-    Refusal tokens are whole words. A mode assignment or a forbidden port
-    assignment fails even when a refusal word is also on the line.
+    The stem is removed only inside an allowlisted identifier. A mode
+    assignment or a forbidden port assignment fails even on a refusal line.
     """
     if _HARD_ASSIGN.search(line):
         return False
-    scrubbed = re.sub("upside_" + _LIVE, "", line, flags=re.IGNORECASE)
+    scrubbed = line
+    for token in _allow_tokens():
+        scrubbed = re.sub(rf"\b{re.escape(token)}\b", "", scrubbed)
+    if re.search(rf"\b{_LIVE}\b", scrubbed, flags=re.IGNORECASE):
+        return False
+    scrubbed = re.sub("upside_" + _LIVE, "", scrubbed, flags=re.IGNORECASE)
     scrubbed = re.sub(_LIVE + r"[ _]?quote", "", scrubbed, flags=re.IGNORECASE)
     # Paper Gateway login names are not a real-account switch. A bare paper flag still fails.
     scrubbed = re.sub("IBKR_" + "PAPER_USERNAME", "", scrubbed, flags=re.IGNORECASE)
     scrubbed = re.sub("IBKR_" + "PAPER_PASSWORD", "", scrubbed, flags=re.IGNORECASE)
     # The account pin names one paper id. A bare paper flag still fails.
     scrubbed = re.sub("IBKR_" + "PAPER_ACCOUNT", "", scrubbed, flags=re.IGNORECASE)
+    # The deployed start script greps the placeholder prefix. A bare flag still fails.
+    scrubbed = re.sub("IBKR_" + "PAPER_", "", scrubbed, flags=re.IGNORECASE)
     multiplier = _LIVE + "_size_multiplier"
     if multiplier in line and not _MULTIPLIER_OK.search(line):
         return False

@@ -34,20 +34,19 @@ class Settings(BaseSettings):
     database_path: Path = Field(default=DEFAULT_DATABASE_PATH)
     ibkr_host: str = Field(
         default="127.0.0.1",
-        validation_alias=AliasChoices("IBKR_HOST", "IB_HOST"),
+        validation_alias=AliasChoices("IB_HOST", "IBKR_HOST"),
     )
     ibkr_port: int = Field(
         default=4002,
-        validation_alias=AliasChoices("IBKR_PORT", "IB_PORT"),
+        validation_alias=AliasChoices("IB_PORT", "IBKR_PORT"),
     )
-    ibkr_client_id: int = 1
+    ibkr_client_id: int = Field(
+        default=1,
+        validation_alias=AliasChoices("IB_CLIENT_ID", "IBKR_CLIENT_ID"),
+    )
     ib_client_id_exec: int = 11
     ib_client_id_recon: int = 12
     ib_client_id_report: int = 13
-    ibkr_account: str = Field(
-        default="",
-        validation_alias=AliasChoices("IBKR_ACCOUNT", "IB_ACCOUNT"),
-    )
     ibkr_paper_account: str = Field(
         default="",
         validation_alias=AliasChoices("IBKR_PAPER_ACCOUNT"),
@@ -63,7 +62,7 @@ class Settings(BaseSettings):
             raise ValueError("port refused: paper_only; only 4002 and 7497 are accepted")
         return value
 
-    @field_validator("ibkr_account", "ibkr_paper_account")
+    @field_validator("ibkr_paper_account")
     @classmethod
     def _paper_account_only(cls, value: str) -> str:
         # ``DU``, one optional letter, then digits. Other ids are refused: paper_only.

@@ -73,8 +73,33 @@ class TradeJournal:
                     seq INTEGER NOT NULL,
                     symbol TEXT NOT NULL,
                     state TEXT NOT NULL,
+                    intent_type TEXT,
+                    protective INTEGER NOT NULL DEFAULT 0,
+                    quote_source TEXT,
+                    market_data_type INTEGER,
+                    quote_data_type TEXT,
+                    quote_as_of_utc TEXT,
+                    quote_received_at_utc TEXT,
+                    delay_sec REAL,
                     UNIQUE (intent_id, seq)
                 );
+                CREATE TABLE IF NOT EXISTS intent_files (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts_utc TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    content_hash TEXT,
+                    detail_json TEXT NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS intent_files_no_update
+                BEFORE UPDATE ON intent_files
+                BEGIN
+                    SELECT RAISE(ABORT, 'intent_files is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS intent_files_no_delete
+                BEFORE DELETE ON intent_files
+                BEGIN
+                    SELECT RAISE(ABORT, 'intent_files is append-only');
+                END;
                 CREATE TABLE IF NOT EXISTS order_events (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     order_id TEXT NOT NULL,
@@ -168,6 +193,24 @@ class TradeJournal:
                 );
                 """
             )
+            self._migrate_orders(conn)
+
+    def _migrate_orders(self, conn: sqlite3.Connection) -> None:
+        """Add quote and protective columns on a journal created before them."""
+        present = {row[1] for row in conn.execute("PRAGMA table_info(orders)")}
+        additions = {
+            "intent_type": "ALTER TABLE orders ADD COLUMN intent_type TEXT",
+            "protective": "ALTER TABLE orders ADD COLUMN protective INTEGER NOT NULL DEFAULT 0",
+            "quote_source": "ALTER TABLE orders ADD COLUMN quote_source TEXT",
+            "market_data_type": "ALTER TABLE orders ADD COLUMN market_data_type INTEGER",
+            "quote_data_type": "ALTER TABLE orders ADD COLUMN quote_data_type TEXT",
+            "quote_as_of_utc": "ALTER TABLE orders ADD COLUMN quote_as_of_utc TEXT",
+            "quote_received_at_utc": "ALTER TABLE orders ADD COLUMN quote_received_at_utc TEXT",
+            "delay_sec": "ALTER TABLE orders ADD COLUMN delay_sec REAL",
+        }
+        for name, statement in additions.items():
+            if name not in present:
+                conn.execute(statement)
 
     def record_intent(self, intent: dict[str, Any]) -> None:
         with self._connect() as conn:
@@ -250,17 +293,95 @@ class TradeJournal:
                 (ts, action, json.dumps(detail, ensure_ascii=False)),
             )
 
-    def create_order(self, *, order_id: str, intent_id: str, seq: int, symbol: str) -> None:
+    def create_order(
+        self,
+        *,
+        order_id: str,
+        intent_id: str,
+        seq: int,
+        symbol: str,
+        intent_type: str | None = None,
+        protective: bool = False,
+        quote_source: str | None = None,
+        market_data_type: int | None = None,
+        quote_data_type: str | None = None,
+        quote_as_of_utc: str | None = None,
+        quote_received_at_utc: str | None = None,
+        delay_sec: float | None = None,
+    ) -> None:
         when = datetime.now(UTC)
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO orders (order_id, intent_id, seq, symbol, state)
-                VALUES (?, ?, ?, ?, 'INTENT_RECEIVED')
+                INSERT INTO orders (
+                    order_id, intent_id, seq, symbol, state, intent_type, protective,
+                    quote_source, market_data_type, quote_data_type,
+                    quote_as_of_utc, quote_received_at_utc, delay_sec
+                )
+                VALUES (?, ?, ?, ?, 'INTENT_RECEIVED', ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (order_id, intent_id, seq, symbol),
+                (
+                    order_id,
+                    intent_id,
+                    seq,
+                    symbol,
+                    intent_type,
+                    int(protective),
+                    quote_source,
+                    market_data_type,
+                    quote_data_type,
+                    quote_as_of_utc,
+                    quote_received_at_utc,
+                    delay_sec,
+                ),
             )
         self._order_event(order_id, "INTENT_RECEIVED", when)
+
+    def cancel_unfilled_orders(self) -> list[str]:
+        """Request cancellation of working orders that are not protective stops."""
+        working = (
+            "INTENT_RECEIVED",
+            "DRAFT",
+            "PENDING_APPROVAL",
+            "APPROVED",
+            "SUBMITTING",
+            "SUBMITTED",
+            "PARTIALLY_FILLED",
+        )
+        placeholders = ", ".join("?" for _ in working)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT order_id FROM orders
+                WHERE COALESCE(protective, 0) = 0 AND state IN ({placeholders})
+                """,
+                working,
+            ).fetchall()
+        when = datetime.now(UTC)
+        cancelled: list[str] = []
+        for row in rows:
+            order_id = str(row["order_id"])
+            self.set_order_state(order_id, "CANCEL_REQUESTED", when=when)
+            cancelled.append(order_id)
+        return cancelled
+
+    def record_intent_file(
+        self,
+        *,
+        path: str,
+        content_hash: str | None = None,
+        detail: dict[str, Any] | None = None,
+        when: datetime | None = None,
+    ) -> None:
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO intent_files (ts_utc, path, content_hash, detail_json)
+                VALUES (?, ?, ?, ?)
+                """,
+                (ts, path, content_hash, json.dumps(detail or {}, ensure_ascii=False)),
+            )
 
     def order_state(self, order_id: str) -> str | None:
         with self._connect() as conn:

@@ -1,7 +1,7 @@
 """Moving averages, Wilder RSI, population Bollinger bands, and Wilder ATR.
 
 Indicators use adjusted closes. Quantity, fees, limits, and fair value use
-raw prices, which the caller keeps separate. ``compute`` remains a live quote
+raw prices, which the caller keeps separate. ``compute`` remains a quote
 placeholder and does not fetch data.
 """
 

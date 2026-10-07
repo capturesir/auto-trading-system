@@ -40,11 +40,13 @@ def load_adr_map(path: Path) -> list[AdrMapping]:
     rows: list[AdrMapping] = []
     with path.open(encoding="utf-8", newline="") as handle:
         for record in csv.DictReader(handle):
+            adr = record.get("adr") or record.get("adr_ticker")
+            ratio = record.get("ratio") or record.get("adr_ratio")
             rows.append(
                 AdrMapping(
                     local_ticker=record["local_ticker"],
-                    adr_ticker=record["adr_ticker"],
-                    adr_ratio=float(record["adr_ratio"]),
+                    adr_ticker=str(adr),
+                    adr_ratio=float(str(ratio)),
                     adr_currency=record["adr_currency"],
                     issuer_group=record["issuer_group"],
                     verified_at=date.fromisoformat(record["verified_at"]),

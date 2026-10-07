@@ -1,5 +1,7 @@
 {
-  "rule_id": "ADR_PREMIUM_PAUSED",
-  "rule_version": "2026-10-06",
-  "rule_hash": "0c621402b71b"
+  "rule_id": "adr_premium_veto",
+  "rule_version": 1,
+  "rule_hash": "sha256:0c621402b71b5dd903c25aa65c5787369376c0301bce1789e731ebc589b24ba4",
+  "approval_status": "user_approved",
+  "note": "門檻 P97 暫停／P90 恢復（用戶 2026-10-06 21:05 選定）。即時生效（只限模擬盤、只擋買入）；用戶已於 2026-10-06 21:24 HKT 確認「確認 adr_premium_veto v1 0c621402b71b」。風控類規則，經理批准即時生效，不受策略「草稿未確認不得運行」限制（策略規格 §3.4、§15.5）。兩層（分配器、執行端 R28）只比對 rule_id、rule_version、rule_hash 三鍵，與 state 檔不符時當 missing；approval_status 與 note 只作說明，不參與比對，也不計入規則雜湊。"
 }

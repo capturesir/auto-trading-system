@@ -123,6 +123,7 @@ for signal in document.signals:
 ```bash
 cp .env.example .env
 # 只填非機密的連線設定後再匯出。登入名稱和密碼不得寫進 .env。
+# VPS 用 systemd-creds。本機只經安全輸入放進程環境變數，不要先寫檔再改權限。
 set -a
 source .env
 set +a
@@ -134,15 +135,14 @@ set +a
 | --- | --- | --- |
 | `SIGNALS_PATH` | 訊號檔路徑 | `/workspace/invest/signals.json` |
 | `DATABASE_PATH` | SQLite 檔案 | `data/auto_trading.sqlite` |
-| `IBKR_HOST` | IB Gateway 位址 | `127.0.0.1` |
-| `IBKR_PORT` | IB Gateway 埠 | `4002`（只接受模擬埠 4002 與 7497） |
-| `IBKR_CLIENT_ID` | API client id | `1` |
-| `IBKR_ACCOUNT` | 模擬帳戶代碼。有填時必須是 `DU`、最多一個大寫字母、再接數字 | 空字串 |
+| `IB_HOST` | IB Gateway 位址。`IBKR_HOST` 是同一個設定 | `127.0.0.1` |
+| `IB_PORT` | IB Gateway 埠。`IBKR_PORT` 是同一個設定 | `4002`（只接受模擬埠 4002 與 7497） |
+| `IB_CLIENT_ID` | API client id。`IBKR_CLIENT_ID` 是同一個設定 | `1` |
 | `IBKR_PAPER_ACCOUNT` | 必填的模擬帳戶釘選。看到的帳戶必須正好是這一個，否則 R0 拒絕、斷線並全停 | 無預設 |
 | `TRADING_HOME` | 意圖、提醒、風控快照的根目錄 | `/workspace/trading` |
 | `BASE_CURRENCY` | 基準幣別，`HKD` 或 `USD` | `HKD` |
 
-這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。模擬帳戶代碼必須是 `DU`、可選一個大寫字母、再接數字，而且 `IBKR_PAPER_ACCOUNT` 必填，看到的帳戶必須正好是這一個。不符合就寫下全停、斷開連線，並記一筆異常。交易程式不讀登入名稱和密碼，只連接已經登入的 Gateway（預設 `127.0.0.1:4002`）。IBC 範本和啟動檢查只放在 `vps/deploy/`，`ReadOnlyApi` 維持 yes，要等 E2 並經使用者同意才改。風控閘門是唯一會叫到券商 `place` 的路徑。每張單送出前會重讀 `state/risk_limits.json`（`risk_limits/1.1`）。新開倉要求 `trading_scope` 是 `paper_only`，而且雜湊必須和檔內 `limits` 以及核准向量一致。出場和保護性停損不因這份檔案不符而停住。全停只能在這台主機的互動終端解除，而且要明確加上 `--reset-hwm` 才會重設淨值高點，並寫入 `hwm_history`。
+這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。模擬帳戶代碼必須是 `DU`、可選一個大寫字母、再接數字，而且 `IBKR_PAPER_ACCOUNT` 必填，看到的帳戶必須正好是這一個。不符合就寫下全停、斷開連線，並記一筆異常。交易程式不讀登入名稱和密碼，只連接已經登入的 Gateway（預設 `127.0.0.1:4002`）。IBC 範本和啟動檢查以 VPS 上的 `vps/deploy/render_template.py` 與 `vps/deploy/ibgw-start.sh` 為準，帳密由 systemd-creds 寫進 tmpfs。`ReadOnlyApi` 維持 yes，要等 E2 並經使用者同意才改。風控閘門是唯一會叫到券商 `place` 的路徑。新開倉會自檢 `state/risk_limits.json`（`risk_limits/1.1`），`trading_scope` 必須是 `paper_only`，而且雜湊必須和檔內 `limits` 以及核准向量一致。出場和保護性停損不因這份檔案不符而停住。全停會撤銷未成交的一般單、把 `strategy_runtime` 設為 halted，並寫入日誌。解除要在這台主機的互動終端輸入確認短語；R0 違規仍在時不能解除。只有 `--reset-hwm` 才會重設淨值高點，並寫入 `hwm_history`。信心度不足用 `LOW_CONFIDENCE`，不和 R19 混用。
 
 交易日誌寫在 `TRADING_HOME/data/trading.db`（SQLite WAL），並追加 JSONL 與每月 CSV。`trade why` 由成交追到意圖、訊號和策略雜湊。
 

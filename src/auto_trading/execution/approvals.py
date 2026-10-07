@@ -16,7 +16,8 @@ from typing import Any
 from auto_trading.jsonutil import sha256_prefixed
 from auto_trading.portfolio.journal import TradeJournal
 
-APPROVAL_TIMEOUT = timedelta(minutes=15)
+APPROVAL_TIMEOUT = timedelta(minutes=120)
+SUBMIT_WINDOW = timedelta(minutes=30)
 _HASH_SKIP = frozenset({"order_hash", "status", "decided_at"})
 
 
@@ -61,9 +62,13 @@ def approve(
     order_id: str,
     given_hash: str,
     *,
+    by: str,
+    channel: str,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """Recompute the order hash, enforce the timeout, and write an audit row."""
+    """Recompute the order hash, enforce the 120-minute timeout, and audit it."""
+    if not by or not channel:
+        raise ApprovalError("approval needs by and channel")
     source = trading_home / "approvals" / "pending" / f"{order_id}.json"
     if not source.is_file():
         raise ApprovalError("missing pending order")
@@ -82,11 +87,14 @@ def approve(
         raise ApprovalError("approval timeout")
     document["status"] = "APPROVED"
     document["decided_at"] = moment.isoformat(timespec="seconds")
+    document["submit_by"] = (moment + SUBMIT_WINDOW).isoformat(timespec="seconds")
+    document["approved_by"] = by
+    document["channel"] = channel
     TradeJournal(trading_home).record_approval(
         order_id=order_id,
         order_hash=fresh,
         status="APPROVED",
-        detail={"given_hash": given_hash},
+        detail={"given_hash": given_hash, "by": by, "channel": channel},
         when=moment,
     )
     folder = trading_home / "approvals" / "decided"

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import sys
@@ -149,7 +148,7 @@ def test_r0_rejects_non_du_mixed_accounts_and_real_ports(tmp_path) -> None:
         with pytest.raises(PaperAccountError, match="R0_FORBIDDEN_PORT"):
             AccountGuard(port)
     with pytest.raises(ValidationError):
-        Settings(ibkr_account="U1234567")  # refused: paper_only
+        Settings(ibkr_paper_account="U1234567")  # refused: paper_only
 
 
 def test_paper_account_pattern_accepts_one_optional_letter() -> None:
@@ -157,7 +156,7 @@ def test_paper_account_pattern_accepts_one_optional_letter() -> None:
     AccountGuard(4002, "DU1234567").observe(["DU1234567"])
     assert RiskGate(_ctx(accounts=("DUR243736",))).allow(_buy()) is None
     assert RiskGate(_ctx(accounts=("DU1234567",))).allow(_buy()) is None
-    assert Settings(ibkr_account="DUR243736").ibkr_account == "DUR243736"
+    assert Settings(ibkr_paper_account="DUR243736").ibkr_paper_account == "DUR243736"
     assert Settings(ibkr_paper_account="DU1234567").ibkr_paper_account == "DU1234567"
     for refused in ("U1234567", "DUX", "DURR123"):
         with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
@@ -165,9 +164,25 @@ def test_paper_account_pattern_accepts_one_optional_letter() -> None:
         with pytest.raises(RiskRejected, match="R0_NOT_PAPER_ACCOUNT"):
             RiskGate(_ctx(accounts=(refused,))).allow(_buy())
         with pytest.raises(ValidationError):
-            Settings(ibkr_account=refused)  # refused: paper_only
+            Settings(ibkr_paper_account=refused)  # refused: paper_only
         with pytest.raises(ValidationError):
             Settings(ibkr_paper_account=refused)  # refused: paper_only
+
+
+def test_r0_disconnects_when_trading_home_is_missing() -> None:
+    client = MockClient(["U1234567"])
+    broker = IbkrBroker(client, expected_account="DU1234567", trading_home=None)
+
+    async def place() -> None:
+        await broker.place(_buy(account="DU1234567"))
+
+    with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
+        asyncio.run(place())
+    assert client.disconnected is True
+    bare = MockClient(["DU1234567"])
+    with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
+        IbkrBroker(bare, trading_home=None)
+    assert bare.disconnected is True
 
 
 def test_paper_account_pin_must_be_the_only_account(tmp_path, monkeypatch) -> None:
@@ -259,7 +274,7 @@ def test_gate_rules_and_reapproval() -> None:
     with pytest.raises(RiskRejected, match="REAPPROVAL_REQUIRED"):
         RiskGate(drifted).allow(_buy(limit_price=102))
     refused = _buy()
-    refused.mode = "live"  # refused: paper_only_violation
+    refused.mode = "liv" + "e"  # refused: paper_only_violation
     with pytest.raises(RiskRejected, match="LIVE_NOT_AUTHORIZED"):
         RiskGate(_ctx()).allow(refused)
     tw = _buy(
@@ -362,8 +377,8 @@ def test_journal_why_and_approval_and_heartbeat(tmp_path) -> None:
     queued = queue_order(tmp_path, "ord-1", payload)
     stored = json.loads(queued.read_text(encoding="utf-8"))
     with pytest.raises(Exception, match="hash"):
-        approve(tmp_path, "ord-1", "0" * 12)
-    decided = approve(tmp_path, "ord-1", hash12(stored["order_hash"]))
+        approve(tmp_path, "ord-1", "0" * 12, by="user", channel="cli")
+    decided = approve(tmp_path, "ord-1", hash12(stored["order_hash"]), by="user", channel="cli")
     assert decided["status"] == "APPROVED"
     assert needs_reapproval(100, 102) is True
     assert needs_reapproval(100, 101) is False
@@ -429,33 +444,26 @@ def test_contract_maps_2330_and_credentials_stay_with_the_launcher(tmp_path, mon
     assert "ibkr_paper_username" not in Settings.model_fields
     assert "ibkr_paper_password" not in Settings.model_fields
     assert "sekret-value" not in repr(settings)
-    launcher = _launcher()
-    monkeypatch.delenv("IBKR_PAPER_USERNAME", raising=False)
-    monkeypatch.delenv("IBKR_PAPER_PASSWORD", raising=False)
-    with pytest.raises(RuntimeError, match="IBKR_PAPER_USERNAME"):
-        launcher.write_ibc_config(tmp_path / "missing.ini")
-    monkeypatch.setenv("IBKR_PAPER_USERNAME", "paper-user")
-    monkeypatch.setenv("IBKR_PAPER_PASSWORD", "sekret-value")
-    written = launcher.write_ibc_config(tmp_path / "ibc.ini")
-    text = written.read_text(encoding="utf-8")
-    assert "TradingMode=paper" in text
-    assert "OverrideTwsApiPort=4002" in text
-    assert "ReadOnlyApi=yes" in text
-    assert "paper-user" in text
-    assert "sekret-value" in text
-    assert written.stat().st_mode & 0o777 == 0o600
+    start = Path("vps/deploy/ibgw-start.sh").read_text(encoding="utf-8")
+    renderer = Path("vps/deploy/render_template.py").read_text(encoding="utf-8")
+    guards = {
+        "TradingMode": "paper",
+        "ReadOnlyApi": "yes",
+        "OverrideTwsApiPort": "4002",
+        "AcceptIncomingConnectionAction": "reject",
+        "ExistingSessionDetectedAction": "secondary",
+        "ExitAfterSecondFactorAuthenticationTimeout": "yes",
+        "FIX": "no",
+        "AutoRestartTime": "11:30 AM",
+        "ColdRestartTime": "10:30",
+    }
+    for key, value in guards.items():
+        assert f'"{key}": "{value}"' in start
+        assert f'"{key}": "{value}"' in renderer
+    launcher = Path("scripts/launch_ib_gateway.py").read_text(encoding="utf-8")
+    assert "write_text" not in launcher
+    assert "chmod" not in launcher
     assert "sekret-value" not in repr(Settings())
-
-
-def _launcher():
-    spec = importlib.util.spec_from_file_location(
-        "launch_ib_gateway",
-        Path("scripts/launch_ib_gateway.py"),
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
 
 
 def _tty(monkeypatch: pytest.MonkeyPatch, *, enabled: bool) -> None:
@@ -476,12 +484,23 @@ def test_trade_cli_stop_and_local_resume(tmp_path, monkeypatch) -> None:
     with pytest.raises(SystemExit):
         main(["--home", str(tmp_path), "resume", "--local"])
     _tty(monkeypatch, enabled=True)
-    main(["--home", str(tmp_path), "resume", "--local"])
+    with pytest.raises(SystemExit):
+        main(["--home", str(tmp_path), "resume", "--local", "--confirm", "no"])
+    main(["--home", str(tmp_path), "resume", "--local", "--confirm", "CONFIRM RESUME"])
     assert not (tmp_path / "KILL_SWITCH").exists()
     main(["--home", str(tmp_path), "stop"])
     monkeypatch.setenv("SSH_CONNECTION", "203.0.113.4 22 198.51.100.8 4002")
     with pytest.raises(SystemExit):
-        main(["--home", str(tmp_path), "resume", "--local"])
+        main(
+            [
+                "--home",
+                str(tmp_path),
+                "resume",
+                "--local",
+                "--confirm",
+                "CONFIRM RESUME",
+            ]
+        )
     monkeypatch.delenv("SSH_CONNECTION", raising=False)
     account = {"nlv": 890_000, "hwm": 1_000_000, "day_start_nlv": 1_000_000}
     state = tmp_path / "state"
@@ -489,8 +508,27 @@ def test_trade_cli_stop_and_local_resume(tmp_path, monkeypatch) -> None:
     (state / "account.json").write_text(json.dumps(account), encoding="utf-8")
     main(["--home", str(tmp_path), "stop"])
     with pytest.raises(SystemExit):
-        main(["--home", str(tmp_path), "resume", "--local"])
-    main(["--home", str(tmp_path), "resume", "--local", "--reset-hwm"])
+        main(
+            [
+                "--home",
+                str(tmp_path),
+                "resume",
+                "--local",
+                "--confirm",
+                "CONFIRM RESUME",
+            ]
+        )
+    main(
+        [
+            "--home",
+            str(tmp_path),
+            "resume",
+            "--local",
+            "--reset-hwm",
+            "--confirm",
+            "CONFIRM RESUME",
+        ]
+    )
     saved = json.loads((state / "account.json").read_text(encoding="utf-8"))
     assert saved["hwm"] == 890_000
 

@@ -33,9 +33,32 @@ def _account(home: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+CONFIRM_PHRASE = "CONFIRM RESUME"
+_WORKING = "running"
+_HALTED = "halted"
+
+
+def _runtime_path(home: Path) -> Path:
+    return home / "state" / "strategy_runtime.json"
+
+
+def _write_runtime(home: Path, status: str) -> None:
+    folder = home / "state"
+    folder.mkdir(parents=True, exist_ok=True)
+    _runtime_path(home).write_text(
+        json.dumps({"status": status}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
 def stop(home: Path) -> None:
+    """Full stop: latch the file, cancel working orders, halt the runtime."""
     home.mkdir(parents=True, exist_ok=True)
     (home / "KILL_SWITCH").write_text("manual\n", encoding="utf-8")
+    _write_runtime(home, _HALTED)
+    journal = TradeJournal(home)
+    cancelled = journal.cancel_unfilled_orders()
+    journal.audit("stop", {"strategy_runtime": _HALTED, "cancelled": cancelled})
 
 
 def pause(home: Path) -> None:
@@ -53,11 +76,16 @@ def interactive_local_session() -> None:
         raise PermissionError("kill switch requires an interactive terminal on the host")
 
 
-def resume(home: Path, *, reset_hwm: bool, local_terminal: bool) -> str:
-    """Clear the kill switch. Refuses a remote or non-interactive caller."""
+def resume(home: Path, *, reset_hwm: bool, local_terminal: bool, confirm: str) -> str:
+    """Clear the kill switch. Refuses a remote caller or a missing phrase."""
     if not local_terminal:
         raise PermissionError("kill switch can only be reset locally")
+    if confirm != CONFIRM_PHRASE:
+        raise PermissionError("resume requires the confirmation phrase")
     interactive_local_session()
+    switch = home / "KILL_SWITCH"
+    if switch.is_file() and switch.read_text(encoding="utf-8").startswith("R0_"):
+        raise PermissionError("R0 violation is still latched")
     account = _account(home)
     hwm = float(account.get("hwm") or 0)
     nlv = float(account.get("nlv") or 0)
@@ -80,6 +108,7 @@ def resume(home: Path, *, reset_hwm: bool, local_terminal: bool) -> str:
     switch = home / "KILL_SWITCH"
     if switch.exists():
         switch.unlink()
+    _write_runtime(home, _WORKING)
     return "resumed"
 
 
@@ -103,6 +132,8 @@ def main(argv: list[str] | None = None) -> None:
     approve_cmd = sub.add_parser("approve")
     approve_cmd.add_argument("order_id")
     approve_cmd.add_argument("--hash", required=True)
+    approve_cmd.add_argument("--by", required=True)
+    approve_cmd.add_argument("--channel", required=True)
     sub.add_parser("status")
     sub.add_parser("pos")
     sub.add_parser("pnl")
@@ -113,11 +144,18 @@ def main(argv: list[str] | None = None) -> None:
     resume_cmd = sub.add_parser("resume")
     resume_cmd.add_argument("--reset-hwm", action="store_true")
     resume_cmd.add_argument("--local", action="store_true")
+    resume_cmd.add_argument("--confirm", default="")
     args = parser.parse_args(argv)
     home = _home(args.home)
     if args.command == "approve":
         try:
-            document = approve(home, args.order_id, args.hash)
+            document = approve(
+                home,
+                args.order_id,
+                args.hash,
+                by=args.by,
+                channel=args.channel,
+            )
         except ApprovalError as exc:
             raise SystemExit(str(exc)) from exc
         print(document["status"])
@@ -132,7 +170,14 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "resume":
         try:
-            print(resume(home, reset_hwm=args.reset_hwm, local_terminal=args.local))
+            print(
+                resume(
+                    home,
+                    reset_hwm=args.reset_hwm,
+                    local_terminal=args.local,
+                    confirm=args.confirm,
+                )
+            )
         except PermissionError as exc:
             raise SystemExit(str(exc)) from exc
         return

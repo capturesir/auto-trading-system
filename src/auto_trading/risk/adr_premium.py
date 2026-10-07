@@ -1,86 +1,69 @@
-"""R28 ADR premium pause. Paper entries only.
+"""R28 ADR premium pause. Paper buys of a controlled ADR only.
 
-BUY ENTRY and BUY ADD on a controlled ADR are refused while that name is
-paused. Exits, reduces, and protective stops are never refused by this rule.
-There is no switch that turns the rule off. A bad map, a bad rule file, or
-any exception is treated as missing state and fails closed for the controlled
-set. The controlled set is never empty: a missing map uses the last database
-set plus the built-in list, which includes TSM.
+The decision order is the reference guard: missing, then stale, then paused,
+then unknown. The first hit wins. There is no switch and no shadow mode.
+Sells are not checked. A bad map still watches the built-in names, including
+TSM. Any exception is missing and is not raised.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
-from typing import Any
+import json
 
-BUILTIN_CONTROLLED = frozenset({"TSM"})
-RULE_FIELDS = ("rule_id", "rule_version", "rule_hash")
-REASON = "ADR_PREMIUM_PAUSED"
+from auto_trading.risk import adr_state as state
 
-
-def controlled_symbols(
-    map_symbols: Iterable[str] | None,
-    last_db: Iterable[str] = (),
-) -> frozenset[str]:
-    """Symbols this rule watches. A missing or empty map cannot yield an empty set."""
-    try:
-        if map_symbols is not None:
-            found = frozenset(symbol for symbol in map_symbols if symbol)
-            if found:
-                return found
-        return frozenset(last_db) | BUILTIN_CONTROLLED
-    except Exception:
-        return BUILTIN_CONTROLLED
+PAUSED = "ADR_PREMIUM_PAUSED"
 
 
-def rule_matches(rule: Mapping[str, Any] | None, expected: Mapping[str, Any] | None) -> bool:
-    """Compare only ``rule_id``, ``rule_version``, and ``rule_hash``."""
-    if expected is None:
-        return True
-    try:
-        if not isinstance(rule, Mapping):
-            return False
-        return all(rule.get(field) == expected.get(field) for field in RULE_FIELDS)
-    except Exception:
-        return False
-
-
-def r28_result(
-    *,
-    mode: str,
+def check_buy(
+    ticker: str,
     side: str,
-    intent_type: str,
-    symbol: str,
-    protective: bool = False,
-    reduce_only: bool = False,
-    state: object = None,
-    map_symbols: Iterable[str] | None = None,
-    last_db: Iterable[str] = (),
-    rule: Mapping[str, Any] | None = None,
-    expected_rule: Mapping[str, Any] | None = None,
-) -> str | None:
-    """Return ``ADR_PREMIUM_PAUSED`` or None. Never raises."""
+    now: object,
+    state_path: str,
+    adr_map_path: str,
+    expected_rule_path: str,
+) -> tuple[bool, str | None, str | None, object, str | None]:
+    """Return ``(allowed, reason_code, detail, session, missing_cause)``."""
+    if side != "BUY":
+        return True, None, None, None, None
+    rows, map_err = state.load_map(adr_map_path)
+    loaded: object = None
     try:
-        if protective or reduce_only:
-            return None
-        if side != "BUY" or intent_type not in {"ENTRY", "ADD"}:
-            return None
-        if mode != "paper":
-            return None
-        watched = controlled_symbols(map_symbols, last_db)
-        if symbol not in watched:
-            return None
-        if not rule_matches(rule, expected_rule):
-            return REASON
-        if not isinstance(state, Mapping) or isinstance(state, Exception):
-            return REASON
-        paused = state.get("paused", ())
-        if symbol in set(paused):
-            return REASON
-        return None
+        with open(state_path, encoding="utf-8") as handle:
+            loaded = json.load(handle)
     except Exception:
-        if protective or reduce_only or side != "BUY" or intent_type not in {"ENTRY", "ADD"}:
-            return None
-        if mode != "paper":
-            return None
-        return REASON
+        loaded = None
+    if ticker not in state.controlled_set(rows, loaded):
+        return True, None, None, None, None
+    session: object = None
+
+    def miss(cause: str) -> tuple[bool, str, str, object, str]:
+        return False, PAUSED, "missing", session, cause
+
+    try:
+        session = state.session_S(now)
+        if map_err:
+            return miss(map_err)
+        if loaded is None:
+            return miss("file_absent_or_parse_error")
+        try:
+            with open(expected_rule_path, encoding="utf-8") as handle:
+                expected = json.load(handle)
+        except Exception:
+            return miss("expected_file")
+        state.validate_top(loaded, expected)
+        if not isinstance(loaded, dict) or ticker not in loaded["adrs"]:
+            return miss("adr_absent")
+        entry = loaded["adrs"][ticker]
+        state.validate_entry(entry)
+        if state.check_entry_against(entry, ticker, session, rows) == "stale":
+            return False, PAUSED, "stale", session, None
+        if entry["state"] == "paused":
+            return False, PAUSED, "paused", session, None
+        if entry["state"] == "unknown":
+            return False, PAUSED, "unknown", session, None
+        return True, None, None, session, None
+    except state.Invalid as exc:
+        return miss(exc.args[0])
+    except Exception as exc:
+        return miss(f"exception:{type(exc).__name__}")

@@ -289,6 +289,6 @@ def test_mapping_file_round_trip() -> None:
         5,
         "USD",
         "TSMC",
-        date(2026, 10, 1),
+        date(2026, 10, 6),
         rows[0].source,
     )

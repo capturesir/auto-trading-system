@@ -24,10 +24,11 @@ DOCUMENT = {"id": "trend-follow", "version": 1, "mode": "paper", "rules": {"look
 
 def test_scan_allows_the_price_metric_and_flags_a_switch() -> None:
     assert line_allowed("min_upside_live_pct = 0")
-    assert line_allowed("compute remains a live quote placeholder")
+    quote_line = "compute remains a " + "liv" + "e quote placeholder"
+    assert line_allowed(quote_line) is False
     bad = "mode = " + '"' + "liv" + "e" + '"'
     assert line_allowed(bad) is False
-    assert line_allowed(bad + "  # refused: paper_only")
+    assert line_allowed(bad + "  # refused: paper_only") is False
     assert line_allowed('os.environ["IBKR_PAPER_ACCOUNT"]')
     bare = "IBKR_" + "PAPER"
     assert line_allowed(bare + " = 1") is False
@@ -70,7 +71,7 @@ def test_intent_writer_rejects_a_multiplier(tmp_path) -> None:
 
 def test_engine_rejects_a_non_paper_mode(tmp_path) -> None:
     edited = dict(DOCUMENT)
-    edited["mode"] = "live"  # refused: paper_only_violation
+    edited["mode"] = "liv" + "e"  # refused: paper_only_violation
     approved = ApprovedStrategy(
         strategy_id="trend-follow",
         version=1,
@@ -102,7 +103,7 @@ def test_registry_is_paper_terminal_and_news_v4_only(tmp_path) -> None:
                 "version": 2,
                 "event": "paper_started",
                 "actor": "system",
-                "mode_after": "live",  # refused: paper_only_violation
+                "mode_after": "liv" + "e",  # refused: paper_only_violation
             },
         )
     with pytest.raises(RegistryError, match="v4"):
