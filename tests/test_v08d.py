@@ -705,21 +705,22 @@ def test_t28_16_raw_data_tests_skip_on_a_clean_checkout() -> None:
 
 
 def test_t28_17_universe_tree_has_no_forbidden_token() -> None:
-    completed = subprocess.run(
-        [
-            "rg",
-            "-o",
-            "-i",
-            "[A-Za-z0-9_]*" + ("liv" + "e") + "[A-Za-z0-9_]*",
-            "research/universe",
-            "data/universe",
-        ],
-        cwd=ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
+    import re
+
+    pattern = re.compile(
+        "[A-Za-z0-9_]*" + ("liv" + "e") + "[A-Za-z0-9_]*",
+        re.IGNORECASE,
     )
-    assert completed.stdout == ""
+    hits: list[str] = []
+    for base in (ROOT / "research" / "universe", ROOT / "data" / "universe"):
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if any(part in {"__pycache__", ".staging", "cache"} for part in path.parts):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            hits.extend(pattern.findall(text))
+    assert hits == []
     allow = (ROOT / "ci" / "r0_live_allowlist.txt").read_text(encoding="utf-8").splitlines()
     assert allow == [
         "upside_live",
