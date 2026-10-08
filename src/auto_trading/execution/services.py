@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import shutil
@@ -44,6 +45,8 @@ from auto_trading.portfolio.journal import TradeJournal
 from auto_trading.reports.daily_summary import write_daily_summary
 from auto_trading.risk.gate import GateContext
 from auto_trading.risk.r9_state import catch_up, observe_nlv
+
+log = logging.getLogger(__name__)
 
 MACAU = ZoneInfo("Asia/Macau")
 OMS_INTERVAL_SEC = 10
@@ -755,7 +758,9 @@ def sync_argv(root: Path, remote: str, *, direction: str) -> list[str]:
         row == "state/" or row.endswith("adr_premium_state.json") for row in rows
     ):
         raise RuntimeError("outbound sync must not carry box-owned state")
-    if any("confirmed_strategies.json" in row for row in rows):
+    from auto_trading.execution.strategy_book import sync_row_carries_pin
+
+    if any(sync_row_carries_pin(row) for row in rows):
         raise RuntimeError("confirmed strategies are deployed by git, not sync")
     target = remote if remote.endswith("/") else remote + "/"
     local = f"{root}/"
@@ -802,8 +807,17 @@ def audit_confirmed_hashes(home: Path, now: datetime) -> list[str]:
     A mismatch pauses new entries and writes one critical alert.
     """
     from auto_trading.alerts.critical import write_critical_event
-    from auto_trading.execution.strategy_book import confirmed_mismatches
+    from auto_trading.execution.strategy_book import confirmed_mismatches, refresh_confirmed_pins
 
+    error = refresh_confirmed_pins()
+    if error:
+        _set_pause(home, "pin_file", True)
+        _pin_unreadable(home, now, error)
+        return [error]
+    _set_pause(home, "pin_file", False)
+    marker = home / "state" / "pin_unreadable_alert.txt"
+    if marker.is_file():
+        marker.unlink()
     bad = confirmed_mismatches(_strategies_root(home))
     _set_pause(home, "approved_hash", bool(bad))
     if not bad:
@@ -827,6 +841,29 @@ def audit_confirmed_hashes(home: Path, now: datetime) -> list[str]:
     marker.parent.mkdir(parents=True, exist_ok=True)
     marker.write_text(stamp + "\n", encoding="utf-8")
     return bad
+
+
+def _pin_unreadable(home: Path, now: datetime, error: str) -> None:
+    """One critical alert per failure type. Openings stop; exits still run."""
+    from auto_trading.alerts.critical import write_critical_event
+
+    marker = home / "state" / "pin_unreadable_alert.txt"
+    previous = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+    if previous == error:
+        return
+    write_critical_event(
+        home,
+        kind="confirmed_pin_unreadable",
+        reason_code="R25",
+        rule_id="R25",
+        now=now,
+        account=_pin(),
+        message_zh="確認策略清單讀不到。新開倉已拒絕。出場和保護性停損仍會送出。",
+        resume_hint="還原 config/confirmed_strategies.json 後再啟動送單行程。",
+        detail={"error": error},
+    )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(error + "\n", encoding="utf-8")
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -895,6 +932,7 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
     valid_from = _parse_time(row.get("valid_from", envelope.get("valid_from")))
     if _has_valid_from(row, envelope) and valid_from is None:
         valid_from = datetime(1970, 1, 1, tzinfo=UTC)
+    parent = row.get("parent_intent_id", envelope.get("parent_intent_id"))
     return OrderIntent(
         client_id=str(row.get("client_id") or intent_id),
         symbol=symbol,
@@ -903,6 +941,7 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
         limit_price=None if limit is None else _number(limit),
         intent_id=intent_id,
         intent_type=str(row.get("intent_type") or "ENTRY"),
+        parent_intent_id=None if parent is None else str(parent),
         account=str(row.get("account") or _pin()),
         mode=str(row.get("mode") or envelope.get("mode") or "paper"),
         live_size_multiplier=None if raw_mult is None else _number(raw_mult),
@@ -916,6 +955,8 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
         limit_price_cap=None if cap is None else _number(cap),
         ref_price_at_create=None if ref_price is None else _number(ref_price),
         valid_from=valid_from,
+        protective=bool(row.get("protective", envelope.get("protective", False))),
+        reduce_only=bool(row.get("reduce_only", envelope.get("reduce_only", False))),
     )
 
 
@@ -973,14 +1014,23 @@ def _account_is_fresh(account: dict[str, Any], now: datetime) -> bool:
 
 
 def _refresh_quotes(home: Path, now: datetime, symbols: list[str]) -> dict[str, Any]:
-    """File quotes, filled from the Gateway only when the unit is allowed to connect."""
+    """File quotes. Stale receipts are fetched again when the unit may connect."""
     from auto_trading.market.quotes import load_quotes, write_quotes
+    from auto_trading.risk.gate import QUOTE_RECEIPT_MAX_SEC
 
     quotes = load_quotes(home)
     if os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() != "1":
         return quotes
-    missing = [symbol for symbol in symbols if symbol not in quotes]
-    if not missing:
+    needed: list[str] = []
+    seen: set[str] = set()
+    for symbol in symbols:
+        if symbol in seen:
+            continue
+        seen.add(symbol)
+        quote = quotes.get(symbol)
+        if quote is None or quote.age_seconds(now) > QUOTE_RECEIPT_MAX_SEC:
+            needed.append(symbol)
+    if not needed:
         return quotes
     try:
         import asyncio
@@ -989,8 +1039,9 @@ def _refresh_quotes(home: Path, now: datetime, symbols: list[str]) -> dict[str, 
         from auto_trading.execution.ibkr import PaperGateway
 
         gateway = PaperGateway(get_settings(), client_id=int(os.environ.get("IB_CLIENT_ID", "11")))
-        rows = asyncio.run(gateway.snapshot_quotes(missing))
-    except Exception:
+        rows = asyncio.run(gateway.snapshot_quotes(needed))
+    except Exception as exc:
+        log.warning("quote refresh failed: %s", type(exc).__name__)
         return quotes
     if not rows:
         return quotes
@@ -1045,7 +1096,15 @@ def _production_context(
     positions: list[Held] = []
     for row in account.get("positions") or []:
         if isinstance(row, dict) and row.get("symbol"):
-            positions.append(Held(str(row["symbol"]), float(row.get("qty") or 0), 0.0))
+            strategy = row.get("strategy_id")
+            positions.append(
+                Held(
+                    str(row["symbol"]),
+                    float(row.get("qty") or 0),
+                    0.0,
+                    strategy_id=str(strategy) if strategy else None,
+                )
+            )
     recon_ok = True
     recon_path = home / "state" / "recon.json"
     if recon_path.is_file():
@@ -1123,12 +1182,31 @@ def _file_approval(intent: OrderIntent, root: Path | None) -> str:
 
 
 def _bind_approved_hash(ctx: GateContext, intent: OrderIntent) -> None:
-    from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES
+    from auto_trading.execution.strategy_book import (
+        CONFIRMED_SPEC_HASHES,
+        PIN_LOAD_ERROR,
+        file_for,
+        load_approved,
+    )
+    from auto_trading.strategy.spec import spec_hash
 
     ctx.approved_hash = None
-    if not intent.strategy_id or intent.strategy_version is None:
+    if intent.strategy_id and intent.strategy_version is not None:
+        ctx.approved_hash = CONFIRMED_SPEC_HASHES.get((intent.strategy_id, intent.strategy_version))
+    reducing = intent.intent_type in {"REDUCE", "EXIT"} or intent.reduce_only or intent.protective
+    if ctx.approved_hash is not None or not reducing or not PIN_LOAD_ERROR:
         return
-    ctx.approved_hash = CONFIRMED_SPEC_HASHES.get((intent.strategy_id, intent.strategy_version))
+    if not intent.strategy_id or intent.strategy_version is None or not intent.spec_hash:
+        return
+    path = file_for(intent.strategy_id, intent.strategy_version, ctx.approved_dir)
+    if path is None:
+        return
+    try:
+        digest = spec_hash(load_approved(path))
+    except (OSError, ValueError, TypeError):
+        return
+    if digest == intent.spec_hash:
+        ctx.approved_hash = digest
 
 
 def _journal_then_send(
@@ -1368,6 +1446,20 @@ def submit_once(
             if source is not None:
                 kept.add(source)
             rejected.append("R25")
+            skipped += 1
+            continue
+        if (
+            intent.valid_from is None
+            and opening
+            and not intent.protective
+            and not intent.reduce_only
+        ):
+            _record_once(
+                journal, symbol=intent.symbol, code="INTENT_EXPIRED", intent_id=key, now=now
+            )
+            if source is not None:
+                retired.add(source)
+            rejected.append("INTENT_EXPIRED")
             skipped += 1
             continue
         approval["value"] = _file_approval(intent, context.approved_dir)

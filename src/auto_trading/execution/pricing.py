@@ -11,9 +11,9 @@ the integer market-data type, and the delay.
 from __future__ import annotations
 
 import logging
-import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
 from typing import Any
 
 from auto_trading.market.ticks import tick_size
@@ -73,18 +73,30 @@ def reference_limit(
         return None, "CHASE_CAP_EXCEEDED"
     limit = align_tick(raw, tick_size(market, raw), buy=buy)
     if buy and cap is not None:
-        limit = min(limit, align_tick(cap, tick_size(market, cap), buy=True))
+        capped = align_tick(cap, tick_size(market, cap), buy=True)
+        limit = min(limit, capped)
     if limit <= 0:
         return None, "LIMIT_UNAVAILABLE"
     return limit, None
 
 
+def quantize_to_tick(market: str, price: float) -> float:
+    """Nearest tick, as a short float. Binary residue such as ``...0003`` is dropped."""
+    tick = tick_size(market, price)
+    quantum = Decimal(str(tick))
+    amount = Decimal(str(price))
+    return float(amount.quantize(quantum, rounding=ROUND_HALF_UP))
+
+
 def align_tick(price: float, tick: float, *, buy: bool) -> float:
-    """BUY rounds down. SELL rounds up."""
-    steps = price / tick
-    if buy:
-        return math.floor(steps + 1e-9) * tick
-    return math.ceil(steps - 1e-9) * tick
+    """BUY rounds down. SELL rounds up. The result sits on the tick in decimal."""
+    quantum = Decimal(str(tick))
+    if quantum <= 0:
+        return price
+    amount = Decimal(str(price))
+    rounding = ROUND_DOWN if buy else ROUND_UP
+    steps = (amount / quantum).to_integral_value(rounding)
+    return float(steps * quantum)
 
 
 def session_open_limit(

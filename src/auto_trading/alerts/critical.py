@@ -38,6 +38,7 @@ _KINDS = frozenset(
         "pool_rebuild_failed",
         "pool_stale",
         "approved_hash_mismatch",
+        "confirmed_pin_unreadable",
         "gateway_restart_failed",
     }
 )

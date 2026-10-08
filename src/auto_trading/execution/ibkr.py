@@ -26,9 +26,13 @@ from auto_trading.broker import (
 )
 from auto_trading.config import DEFAULT_TRADING_HOME, Settings
 from auto_trading.execution.contracts import map_contract
+from auto_trading.execution.pricing import quantize_to_tick
 from auto_trading.execution.r0 import AccountGuard, latch_kill_switch
 from auto_trading.execution.stops import cancel_keeps_protective
-from auto_trading.risk.gate import MAX_QUOTE_DELAY_SEC, RiskRejected
+from auto_trading.risk.gate import MAX_QUOTE_DELAY_SEC, QUOTE_RECEIPT_MAX_SEC, RiskRejected
+
+# Kept so a test can replace ``datetime.now`` without breaking ``isinstance``.
+_WallClock = datetime
 
 
 def _field(item: Any, name: str) -> str:
@@ -184,9 +188,117 @@ def _quote_block(intent: OrderIntent) -> str | None:
         return "R22"
     if intent.quote_data_type == "delayed" and intent.quote_market_data_type not in (3, 4):
         return "R22"
+    if intent.quote_age_sec is not None and intent.quote_age_sec > QUOTE_RECEIPT_MAX_SEC:
+        return "R22"
+    if intent.quote_data_type == "delayed" and (
+        intent.quote_delay_sec is None or intent.quote_delay_sec > MAX_QUOTE_DELAY_SEC
+    ):
+        return "R22"
     if intent.quote_delay_sec is not None and intent.quote_delay_sec > MAX_QUOTE_DELAY_SEC:
         return "QUOTE_DELAY_EXCEEDED"
     return None
+
+
+# How long a snapshot waits for a price and a timestamp tick. Not a fixed sleep.
+_QUOTE_WAIT_SEC = 2.0
+
+
+def _finite_price(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if number != number or number <= 0:
+        return None
+    return number
+
+
+def _as_utc(value: Any) -> datetime | None:
+    if isinstance(value, _WallClock):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if isinstance(value, (int, float)) and value == value and value > 1_000_000_000:
+        return datetime.fromtimestamp(value, UTC)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
+    return None
+
+
+def _tick_time(ticker: Any, *names: str) -> datetime | None:
+    """Tick 45 is ``lastTimestamp``. Tick 88 is ``delayedLastTimestamp``."""
+    for name in names:
+        found = _as_utc(getattr(ticker, name, None))
+        if found is not None:
+            return found
+    wanted = {"lastTimestamp": 45, "delayedLastTimestamp": 88}
+    ids = {wanted[name] for name in names if name in wanted}
+    for tick in getattr(ticker, "ticks", None) or []:
+        if getattr(tick, "tickType", None) not in ids:
+            continue
+        found = _as_utc(getattr(tick, "time", None))
+        if found is not None:
+            return found
+    return None
+
+
+def _quote_row(symbol: str, ticker: Any, received: datetime) -> dict[str, Any] | None:
+    """One quote row. A missing type or timestamp is omitted, never delay 0."""
+    raw_type = getattr(ticker, "marketDataType", None)
+    if raw_type is None:
+        return None
+    try:
+        market_data_type = int(raw_type)
+    except (TypeError, ValueError):
+        return None
+    last = _finite_price(getattr(ticker, "last", None))
+    if last is None:
+        last = _finite_price(getattr(ticker, "delayedLast", None))
+    if last is None:
+        return None
+    if market_data_type in (3, 4):
+        as_of = _tick_time(ticker, "delayedLastTimestamp", "lastTimestamp")
+        kind = "delayed"
+    elif market_data_type == 1:
+        as_of = _tick_time(ticker, "lastTimestamp")
+        kind = "realtime"
+    else:
+        return None
+    if as_of is None:
+        return None
+    delay = (received - as_of).total_seconds()
+    return {
+        "symbol": symbol,
+        "last": last,
+        "as_of": as_of.isoformat(timespec="seconds"),
+        "received_at": received.isoformat(timespec="seconds"),
+        "delay_sec": delay,
+        "source": "ibkr",
+        "data_type": kind,
+        "market_data_type": market_data_type,
+    }
+
+
+async def _wait_for_tick(ticker: Any) -> None:
+    """Return when a price and a timestamp are present, or when the wait ends."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _QUOTE_WAIT_SEC
+    while True:
+        price = _finite_price(getattr(ticker, "last", None))
+        if price is None:
+            price = _finite_price(getattr(ticker, "delayedLast", None))
+        stamp = _tick_time(ticker, "delayedLastTimestamp", "lastTimestamp")
+        if price is not None and stamp is not None:
+            return
+        if loop.time() >= deadline:
+            return
+        await asyncio.sleep(0.05)
 
 
 class PaperGateway:
@@ -246,28 +358,15 @@ class PaperGateway:
                 spec = map_contract(symbol)
                 contract = Stock(spec.ib_symbol, spec.exchange, spec.currency)
                 ticker = ib.reqMktData(contract, "", False, False)
-                await asyncio.sleep(0.4)
-                last = getattr(ticker, "last", None)
-                if last is None or last != last:
-                    last = getattr(ticker, "delayedLast", None)
-                with contextlib.suppress(Exception):
-                    ib.cancelMktData(contract)
-                if last is None or last != last:
-                    continue
-                market_data_type = int(getattr(ticker, "marketDataType", 3) or 3)
-                stamp = datetime.now(UTC).isoformat(timespec="seconds")
-                kind = "delayed" if market_data_type in (3, 4) else "realtime"
-                found.append(
-                    {
-                        "symbol": symbol,
-                        "last": float(last),
-                        "as_of": stamp,
-                        "received_at": stamp,
-                        "source": "ibkr",
-                        "data_type": kind,
-                        "market_data_type": market_data_type,
-                    }
-                )
+                try:
+                    await _wait_for_tick(ticker)
+                    received = datetime.now(UTC)
+                    row = _quote_row(symbol, ticker, received)
+                    if row is not None:
+                        found.append(row)
+                finally:
+                    with contextlib.suppress(Exception):
+                        ib.cancelMktData(contract)
             return found
         finally:
             self.disconnect()
@@ -341,8 +440,10 @@ class PaperGateway:
                 from ib_async import LimitOrder, Stock
 
                 contract = Stock(order["symbol"], order["exchange"], order["currency"])
+                order["market"] = map_contract(intent.symbol).market
                 side = "BUY" if order["side"] == "BUY" else "SELL"
-                ticket = LimitOrder(side, order["quantity"], order["limit_price"])
+                limit = quantize_to_tick(order["market"], float(order["limit_price"]))
+                ticket = LimitOrder(side, order["quantity"], limit)
                 ticket.account = order["account"]
                 ticket.orderRef = order["client_id"]
                 ticket.tif = "DAY"

@@ -43,8 +43,46 @@ def load_confirmed_spec_hashes(path: Path | None = None) -> dict[tuple[str, int]
     return pins
 
 
-# Loaded once from config/confirmed_strategies.json. That file is not synced.
-CONFIRMED_SPEC_HASHES: dict[tuple[str, int], str] = load_confirmed_spec_hashes()
+PIN_RELATIVE = "config/confirmed_strategies.json"
+
+
+def _load_pins() -> tuple[dict[tuple[str, int], str], str | None]:
+    """Read the pin file. A missing or broken file is an error, not a crash."""
+    try:
+        return load_confirmed_spec_hashes(), None
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        log.error("confirmed_strategies unreadable: %s", type(exc).__name__)
+        return {}, type(exc).__name__
+
+
+def refresh_confirmed_pins() -> str | None:
+    """Reload the git pin. Returns the error type, or None when the file is usable."""
+    global CONFIRMED_SPEC_HASHES, PIN_LOAD_ERROR
+    pins, error = _load_pins()
+    CONFIRMED_SPEC_HASHES = pins
+    PIN_LOAD_ERROR = error
+    return error
+
+
+def sync_row_carries_pin(row: str) -> bool:
+    """True when an rsync line would copy ``confirmed_strategies.json``.
+
+    A parent directory such as ``config`` or ``config/`` carries the file.
+    A sibling such as ``config/adr_map.csv`` does not.
+    """
+    text = row.strip().replace("\\", "/")
+    while text.startswith("./"):
+        text = text[2:]
+    text = text.strip("/")
+    if not text or text in {".", "*"}:
+        return True
+    if "confirmed_strategies.json" in text:
+        return True
+    return text == PIN_RELATIVE or PIN_RELATIVE.startswith(text + "/")
+
+
+# Loaded from config/confirmed_strategies.json. A bad file does not crash import.
+CONFIRMED_SPEC_HASHES, PIN_LOAD_ERROR = _load_pins()
 
 
 def approved_dir(root: Path | None = None) -> Path:
@@ -262,6 +300,6 @@ def confirmed_source_errors(root: Path | None = None) -> list[str]:
             errors.append(f"{key[0]} v{key[1]} hash mismatch")
     for name in ("sync_box_to_vps.txt", "sync_vps_to_box.txt"):
         rows = _manifest_rows(base / "vps" / "deploy" / name)
-        if any("confirmed_strategies.json" in row for row in rows):
-            errors.append(f"{name} must not sync the pin file")
+        if any(sync_row_carries_pin(row) for row in rows):
+            errors.append(f"{name} must not sync the pin file or config/")
     return errors

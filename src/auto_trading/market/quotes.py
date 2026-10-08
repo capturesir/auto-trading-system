@@ -175,7 +175,7 @@ def _aware(value: str) -> datetime:
 
 
 def write_quotes(home: Path, now: datetime, rows: list[dict[str, Any]]) -> None:
-    """Atomic quote file written by the account process."""
+    """Atomic quote file written when submit refreshes a symbol."""
     payload = {
         "schema_version": "quotes/1.0",
         "at": now.isoformat(timespec="seconds"),

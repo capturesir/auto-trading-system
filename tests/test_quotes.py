@@ -236,7 +236,29 @@ def test_delayed_freshness_uses_receipt_time_and_records_the_delay(tmp_path) -> 
         received_at=session - timedelta(seconds=11),
         market_data_type=3,
     )
-    assert RiskGate(_ctx(now=session, quotes={"AAPL": held})).allow(_buy()) is None
+    with pytest.raises(RiskRejected, match="R22"):
+        RiskGate(_ctx(now=session, quotes={"AAPL": held})).allow(_buy())
+    late_delay = Quote(
+        last=100,
+        as_of=session - timedelta(seconds=1801),
+        source="ibkr",
+        data_type="delayed",
+        received_at=session,
+        market_data_type=3,
+    )
+    with pytest.raises(RiskRejected, match="R22"):
+        RiskGate(_ctx(now=session, quotes={"AAPL": late_delay})).allow(_buy())
+    unknown = Quote(
+        last=100,
+        as_of=printed,
+        source="ibkr",
+        data_type="delayed",
+        received_at=session,
+        market_data_type=3,
+    )
+    unknown.delay_sec = None
+    with pytest.raises(RiskRejected, match="R22"):
+        RiskGate(_ctx(now=session, quotes={"AAPL": unknown})).allow(_buy())
     older = Quote(
         last=100,
         as_of=session - timedelta(minutes=31),

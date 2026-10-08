@@ -28,6 +28,8 @@ log = logging.getLogger(__name__)
 OPENING = frozenset({"ENTRY", "ADD"})
 REDUCING = frozenset({"REDUCE", "EXIT"})
 MARKETS = frozenset({"US", "HK", "JP", "KR", "TW"})
+# Receipt older than this is R22 for every quote. 1800 is only the delay cap.
+QUOTE_RECEIPT_MAX_SEC = 10
 MAX_QUOTE_DELAY_SEC = 1800
 
 
@@ -70,8 +72,9 @@ class Quote:
     """One price. ``source`` is ibkr or yahoo. ``data_type`` is realtime, delayed, or public.
 
     ``as_of`` is the market timestamp. ``received_at`` is when this process
-    got the quote. Delayed type 3 prints lag by about 15 minutes, so their
-    freshness for R22 is receipt time. ``delay_sec`` keeps that lag.
+    got the quote. Freshness for R22 is receipt time, with a 10 second cap.
+    ``delay_sec`` is how far ``as_of`` lags that receipt. A paper delayed
+    quote also has to stay within 1800 seconds of delay.
     """
 
     last: float
@@ -144,7 +147,7 @@ class GateContext:
     stage: str = "pre"
     approval_price: float | None = None
     reapproval_deviation: float = 0.015
-    quote_stale_sec: int = 10
+    quote_stale_sec: int = QUOTE_RECEIPT_MAX_SEC
     adr_state_missing: bool = False
     adr_paused: frozenset[str] = frozenset()
     adr_controlled: frozenset[str] = frozenset({"TSM"})
@@ -610,11 +613,11 @@ def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
     if quote.market_data_type == 2 or quote.data_type == "rejected":
         return "R22"
     paper = ctx.registry_mode == "paper" and intent.mode == "paper"
+    age = quote.age_seconds(ctx.now)
+    delay = quote.delay_sec
     if quote.data_type == "delayed":
         if not paper or quote.market_data_type not in (3, 4):
             return "R22"
-        age = quote.age_seconds(ctx.now)
-        delay = quote.delay_sec
         log.info(
             "delayed_quote symbol=%s source=%s market_data_type=%s age_sec=%s delay_sec=%s",
             intent.symbol,
@@ -623,14 +626,14 @@ def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
             age,
             delay,
         )
-        if age > MAX_QUOTE_DELAY_SEC or (delay is not None and delay > MAX_QUOTE_DELAY_SEC):
+        # 10 seconds is receipt age. 1800 is only the allowed print lag.
+        if delay is None or delay > MAX_QUOTE_DELAY_SEC or age > ctx.quote_stale_sec:
             return "R22"
     elif quote.data_type != "realtime":
         return "R22"
     else:
-        if quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
+        if age > ctx.quote_stale_sec:
             return "R22"
-        delay = quote.delay_sec
         if delay is not None and delay > MAX_QUOTE_DELAY_SEC:
             return "QUOTE_DELAY_EXCEEDED"
     if intent.limit_price is not None and quote.last:

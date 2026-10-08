@@ -206,9 +206,11 @@ def test_anonymous_opening_is_r25_and_not_queued(tmp_path: Path, monkeypatch) ->
     assert not (tmp_path / "approvals" / "pending").exists()
 
 
-def test_delayed_quote_within_30_minutes_can_send(tmp_path: Path, monkeypatch, caplog) -> None:
+def test_delayed_quote_received_within_10_seconds_can_send(
+    tmp_path: Path, monkeypatch, caplog
+) -> None:
     _ready(tmp_path, monkeypatch)
-    _quote(tmp_path, NOW, age=timedelta(minutes=10))
+    _quote(tmp_path, NOW, age=timedelta(seconds=1))
     _intent_file(tmp_path, "n1")
     sent: list[OrderIntent] = []
     with caplog.at_level("INFO"):
@@ -245,9 +247,9 @@ def test_delayed_quote_within_30_minutes_can_send(tmp_path: Path, monkeypatch, c
     assert mismatched["freeze"] is True
 
 
-def test_quote_older_than_30_minutes_is_r22(tmp_path: Path, monkeypatch) -> None:
+def test_quote_received_more_than_10_seconds_ago_is_r22(tmp_path: Path, monkeypatch) -> None:
     _ready(tmp_path, monkeypatch)
-    _quote(tmp_path, NOW, age=timedelta(minutes=31))
+    _quote(tmp_path, NOW, age=timedelta(seconds=11))
     _intent_file(tmp_path, "old-quote")
     sent: list[OrderIntent] = []
     result = submit_once(tmp_path, NOW, place=sent.append, readonly=False)

@@ -169,6 +169,7 @@ def test_journal_is_written_before_send_and_a_repeat_is_skipped(
         strategy_id="ta_breakout52",
         strategy_version=1,
         spec_hash=CONFIRMED_SPEC_HASHES[("ta_breakout52", 1)],
+        valid_from=datetime(2026, 10, 2, 21, 30, tzinfo=ZoneInfo("Asia/Macau")),
     )
     first = submit_once(
         tmp_path,
