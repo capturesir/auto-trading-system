@@ -601,6 +601,8 @@ def test_critical_events_follow_the_stop(tmp_path: Path, monkeypatch) -> None:
         (r0_home, "r0_violation"),
     ):
         pending = list((home / "alerts" / "pending").glob(f"*_exec_{kind}.json"))
+        if not pending:
+            pending = list((home / "alerts" / "sent").glob(f"*_exec_{kind}.json"))
         assert len(pending) == 1
         payload = json.loads(pending[0].read_text(encoding="utf-8"))
         for key in (
@@ -623,7 +625,11 @@ def test_critical_events_follow_the_stop(tmp_path: Path, monkeypatch) -> None:
             assert payload[key] not in (None, "")
         assert payload["schema_version"] == "exec_alert/1.0"
         assert list((home / "logs").glob("critical_*.jsonl"))
-        assert (home / "KILL_SWITCH").is_file()
+        if kind == "r9_halt":
+            assert not (home / "KILL_SWITCH").exists()
+            assert payload["actions"]["kill_switch_file"] is False
+        else:
+            assert (home / "KILL_SWITCH").is_file()
 
     def boom(*_args, **_kwargs):
         raise OSError("disk")

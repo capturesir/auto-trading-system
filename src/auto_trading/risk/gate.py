@@ -384,7 +384,30 @@ def _notional(intent: OrderIntent, ctx: GateContext) -> float | None:
     return intent.quantity * price * fx
 
 
+def _cycle_view(ctx: GateContext) -> dict[str, Any] | None:
+    if ctx.trading_home is None:
+        return None
+    from auto_trading.risk.r9_state import cycle_view
+
+    return cycle_view(ctx.trading_home)
+
+
+def _r9_multiplier(intent: OrderIntent, ctx: GateContext) -> tuple[str | None, float]:
+    """Halt latch for new entries. Half size scales R1, R2, and R6 only."""
+    if intent.intent_type not in OPENING:
+        return None, 1.0
+    view = _cycle_view(ctx)
+    if view is not None and view["state"] == "HALTED_COOLDOWN":
+        return "R9_HALTED_COOLDOWN", 0.0
+    if view is not None and view["state"] == "HALF_SIZE":
+        return None, float(view["size_mult"])
+    return None, 1.0
+
+
 def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | None:
+    halted, size_mult = _r9_multiplier(intent, ctx)
+    if halted:
+        return halted
     if ctx.minutes_since_open is not None and ctx.minutes_since_open < 5:
         return "R10"
     if ctx.macro_blackout and market in {"US", "JP"}:
@@ -413,22 +436,30 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
         return "R8"
     drawdown = ctx.nlv / ctx.hwm - 1 if ctx.hwm else 0.0
     if drawdown <= float(ctx.limits["R9_drawdown_halt_pct"]):
-        return "R9"
+        return "R9_HALTED_COOLDOWN"
     notional = _notional(intent, ctx)
     if notional is None:
         return "R22"
     pct_cap = ctx.nlv * float(ctx.limits["R1_order_size_pct_nlv"])
     cash_cap = float(ctx.limits["R2_max_order_notional_base"])
     cap = min(pct_cap, cash_cap)
+    scaled_cap = cap * size_mult
     price = _price(intent, ctx) or 0.0
     currency = intent.currency or map_contract(intent.symbol).currency
     fx = ctx.fx_to_base.get(currency, 1.0)
     lot = intent.lot_size or map_contract(intent.symbol).lot_size
-    if lot * price * fx > cap + 1e-6:
+    lot_notional = lot * price * fx
+    if lot_notional > cap + 1e-6:
         return "LOT_TOO_LARGE"
-    if notional > ctx.nlv * float(ctx.limits["R1_order_size_pct_nlv"]) + 1e-6:
+    if size_mult < 1 and lot_notional > scaled_cap + 1e-6:
+        return "R9_HALF_SIZE_LIMIT"
+    over_r1 = notional > ctx.nlv * float(ctx.limits["R1_order_size_pct_nlv"]) * size_mult + 1e-6
+    over_r2 = notional > float(ctx.limits["R2_max_order_notional_base"]) * size_mult + 1e-6
+    if size_mult < 1 and (over_r1 or over_r2):
+        return "R9_HALF_SIZE_LIMIT"
+    if over_r1:
         return "R1"
-    if notional > float(ctx.limits["R2_max_order_notional_base"]) + 1e-6:
+    if over_r2:
         return "R2"
     fx = ctx.fx_to_base
     held = sum(_base_value(row, fx) for row in ctx.positions if row.symbol == intent.symbol)
@@ -446,7 +477,10 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
         if ccy_held + notional > ctx.nlv * float(ccy_cap) + 1e-6:
             return "R5"
     gross = sum(_base_value(row, fx) for row in ctx.positions) + _pending_open(ctx)
-    if gross + notional > ctx.nlv * float(ctx.limits["R6_max_gross_exposure_pct_nlv"]) + 1e-6:
+    gross_cap = float(ctx.limits["R6_max_gross_exposure_pct_nlv"]) * size_mult
+    if gross + notional > ctx.nlv * gross_cap + 1e-6:
+        if size_mult < 1:
+            return "R9_HALF_SIZE_LIMIT"
         return "R6"
     if ctx.limits["R7_require_cash_cover"] and notional > ctx.cash + 1e-6:
         return "R7"

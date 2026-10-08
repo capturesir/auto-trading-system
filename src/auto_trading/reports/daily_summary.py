@@ -63,6 +63,10 @@ def validate_daily_summary(payload: dict[str, Any]) -> None:
         "r29_anomaly_count",
         "r30_active",
         "critical_events",
+        "r9_cycle_state",
+        "r9_size_mult",
+        "r9_cooldown_days_done",
+        "r9_half_size_days_done",
     ):
         if key not in halts:
             raise ValueError(key)
@@ -138,6 +142,12 @@ def _markdown(payload: dict[str, Any]) -> str:
         lines.append(f"- {item.get('id')} {item.get('status')} {item.get('na_reason')}")
     lines.append("")
     return "\n".join(lines) + "\n"
+
+
+def _r9_summary(trading_home: Path) -> dict[str, Any]:
+    from auto_trading.risk.r9_state import summary_fields
+
+    return summary_fields(trading_home)
 
 
 def write_daily_summary(
@@ -307,6 +317,7 @@ def write_daily_summary(
             "r29_anomaly_count": int(state.get("r29_count") or 0),
             "r30_active": bool(state.get("r30_active")),
             "critical_events": critical_count,
+            **_r9_summary(trading_home),
         },
         "by_quote_type": {
             "realtime": {

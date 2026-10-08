@@ -56,10 +56,17 @@ def allocate(
     odd_lot_enabled: bool = False,
     r1: float = 0.05,
     r2: float = 200_000,
+    r9_size_mult: float = 1.0,
     adr_fallback: Callable[[Proposal], Proposal | None] | None = None,
 ) -> list[Allocated]:
-    """Clip proposals to the shared caps. Nothing is rounded up."""
+    """Clip proposals to the shared caps. Nothing is rounded up.
+
+    ``r9_size_mult`` scales R1 and R2 during HALF_SIZE. R3 stays on the
+    issuer room, which this allocator does not halve.
+    """
     held = dict(issuer_notional or {})
+    r1 *= r9_size_mult
+    r2 *= r9_size_mult
     exits = [item for item in proposals if item.kind in {"EXIT", "REDUCE"}]
     entries = [item for item in proposals if item.kind in {"ENTRY", "ADD"}]
     entries.sort(key=lambda item: _rank(item.strategy_id))

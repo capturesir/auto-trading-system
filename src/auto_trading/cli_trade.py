@@ -93,32 +93,13 @@ def stop(home: Path) -> None:
 
 
 def halt_r9(home: Path) -> None:
-    """Drawdown halt. The critical event is written only after the stop files exist."""
+    """Drawdown halt. The latch is the R9 cycle file, not the kill switch."""
     home.mkdir(parents=True, exist_ok=True)
-    (home / "KILL_SWITCH").write_text("R9\n", encoding="utf-8")
-    _write_runtime(home, _HALTED)
-    journal = TradeJournal(home)
-    cancelled = journal.cancel_unfilled_orders()
-    journal.audit("r9_halt", {"cancelled": cancelled})
-    from auto_trading.alerts.critical import HINT_FULL_STOP
+    from datetime import datetime
 
-    _emit_critical(
-        home,
-        {
-            "kind": "r9_halt",
-            "reason_code": "R9",
-            "rule_id": "R9",
-            "message_zh": "回撤達到全停門檻。",
-            "resume_hint": HINT_FULL_STOP,
-            "actions": {
-                "kill_switch_file": True,
-                "open_orders_cancelled": True,
-                "protective_stops_kept": True,
-                "disconnected": False,
-                "strategies_halted": True,
-            },
-        },
-    )
+    from auto_trading.risk.r9_state import force_halt
+
+    force_halt(home, datetime.now(UTC))
 
 
 def pause(home: Path) -> None:
@@ -184,6 +165,30 @@ def resume(home: Path, *, reset_hwm: bool, local_terminal: bool, confirm: str) -
     except Exception:
         pass
     return "resumed"
+
+
+def resume_r9_early(home: Path, *, local_terminal: bool, confirm: str) -> str:
+    """Cooldown early resume from a local terminal. The kill switch is left alone."""
+    if not local_terminal:
+        raise PermissionError("kill switch can only be reset locally")
+    if confirm != CONFIRM_PHRASE:
+        raise PermissionError("resume requires the confirmation phrase")
+    interactive_local_session()
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    from auto_trading.risk.r9_state import resume_early
+
+    account = _account(home)
+    nlv = float(account.get("nlv") or 0)
+    now = datetime.now(UTC)
+    local = now.astimezone(ZoneInfo("Asia/Macau"))
+    if local.hour < 8:
+        local = local - timedelta(days=1)
+    document = resume_early(home, local.date().isoformat(), nlv, now)
+    if document.get("state") != "HALF_SIZE":
+        raise PermissionError("R9 early resume applies only during cooldown")
+    return "half_size"
 
 
 def resume_r29(home: Path, *, local_terminal: bool, confirm: str) -> str:
@@ -252,11 +257,13 @@ def status_text(home: Path, now) -> str:
 
     count, _late = unforwarded_critical(home, now)
     warn = status_warning(home, now)
+    from auto_trading.risk.r9_state import status_bits
+
     return (
         f"kill_switch={killed} paused={paused} heartbeat_alert={alert} "
         f"gap_sec={None if gap is None else int(gap.total_seconds())} nlv={account.get('nlv')} "
         f"approval={mode} approval_reason={reason} unforwarded_critical={count} "
-        f"critical_warn={'yes' if warn else 'no'}"
+        f"critical_warn={'yes' if warn else 'no'} {status_bits(home)}"
     )
 
 
@@ -295,6 +302,7 @@ def main(argv: list[str] | None = None) -> None:
     resume_cmd.add_argument("--local", action="store_true")
     resume_cmd.add_argument("--confirm", default="")
     resume_cmd.add_argument("--breaker", default="")
+    resume_cmd.add_argument("--r9-early", action="store_true")
     args = parser.parse_args(argv)
     home = _home(args.home)
     if args.command == "approve":
@@ -348,9 +356,17 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "resume":
         try:
-            if args.breaker == "R30":
+            if args.r9_early:
+                print(
+                    resume_r9_early(
+                        home,
+                        local_terminal=args.local,
+                        confirm=args.confirm,
+                    )
+                )
+            elif args.breaker == "R30":
                 raise PermissionError("R30 clears only when notifications recover")
-            if args.breaker == "R29":
+            elif args.breaker == "R29":
                 print(
                     resume_r29(
                         home,

@@ -53,6 +53,24 @@ HASH_ODD_LOT_ON = "sha256:39c52f1586658e8c9bd23be398dd1bd8eef75a04f6c3b8cc85da42
 HASH_R2_AS_FLOAT = "sha256:64039ee55267c8e567181113adc53691e435fb9bd05f308d0d786f6301328cdb"
 HASH_SCOPE_INSIDE_LIMITS = "sha256:5bc6cf96361d80a13cbdb60325271d112ce003a8d14af4dc1252f2c09a89945c"
 
+# Unpublished risk_limits/1.2 keys. The running snapshot stays on 1.1 until the
+# new config_hash is confirmed. These helpers exist so tests can reproduce the
+# 1.2 vectors without writing them into config/risk_limits_expected.json.
+V12_EXTRA: dict[str, Any] = {
+    "R9_cooldown_trading_days": 20,
+    "R9_half_size_mult": 0.5,
+    "R9_half_size_trading_days": 20,
+    "R9_half_size_reset_dd_pct": -0.05,
+}
+HASH_V12_ODD_LOT_OFF = "sha256:effd2188e08b90af3f84a3135b663a0e0a8722a1f9a92a47b7834aed2819165a"
+HASH_V12_ODD_LOT_ON = "sha256:836b1663f2fd9b361b78ed2cc7778e03269394c534c73f6482920de289ad467d"
+HASH_V12_COOLDOWN_AS_FLOAT = (
+    "sha256:854ba5383f89ddbf3fd234cd277655e4d3f55e11c49868d8ce40ecc200a76f99"
+)
+HASH_V12_SCOPE_INSIDE_LIMITS = (
+    "sha256:dc369d43849040ecf720b64e9c1b649a9f93ce1547cf099342a1d2751ccc7573"
+)
+
 EXPECTED_LIMITS: dict[str, Any] = {
     "R1_order_size_pct_nlv": 0.05,
     "R2_max_order_notional_base": 200000,
@@ -76,6 +94,33 @@ EXPECTED_LIMITS: dict[str, Any] = {
 def config_hash(limits: Mapping[str, Any]) -> str:
     """Hash the ``limits`` object only, using the locked serialization."""
     return sha256_prefixed(dict(limits))
+
+
+def limits_v12(
+    *,
+    odd_lot: bool = False,
+    cooldown_as_float: bool = False,
+    scope_inside: bool = False,
+) -> dict[str, Any]:
+    """In-memory 1.2 limits. Not published and not written to the expected file."""
+    data = dict(EXPECTED_LIMITS)
+    data.update(V12_EXTRA)
+    data["tw_odd_lot_enabled"] = odd_lot
+    if cooldown_as_float:
+        data["R9_cooldown_trading_days"] = 20.0
+    if scope_inside:
+        data["trading_scope"] = "paper_only"
+    return data
+
+
+def headroom_v12(nlv: float, *, size_mult: float, gross_used: float = 0.0) -> dict[str, float]:
+    """1.2 headroom. ``order_max`` and gross room are multiplied by ``size_mult``."""
+    order_max = min(nlv * float(EXPECTED_LIMITS["R1_order_size_pct_nlv"]), 200_000) * size_mult
+    gross_cap = nlv * float(EXPECTED_LIMITS["R6_max_gross_exposure_pct_nlv"]) * size_mult
+    return {
+        "order_max_notional_base": order_max,
+        "gross_exposure_remaining_base": gross_cap - gross_used,
+    }
 
 
 def canonical_limits(limits: Mapping[str, Any]) -> str:

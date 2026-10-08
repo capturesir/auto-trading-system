@@ -360,6 +360,7 @@ def test_backtest_is_deterministic_and_blocks_lookahead() -> None:
     assert first.metrics["cagr"] == second.metrics["cagr"]
     assert first.metrics["n_trades"] == second.metrics["n_trades"]
     assert set(first.metrics["r9_resume_scenario"]) == {
+        "cooldown_half_size",
         "manual_no_reset",
         "reset_after_5td",
         "never",

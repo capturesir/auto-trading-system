@@ -191,6 +191,31 @@ class TradeJournal:
                     symbol TEXT PRIMARY KEY,
                     recorded_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS r9_cycle_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts_utc TEXT NOT NULL,
+                    account TEXT,
+                    cycle_no INTEGER,
+                    from_state TEXT,
+                    to_state TEXT,
+                    kind TEXT NOT NULL,
+                    risk_date TEXT,
+                    nlv_base REAL,
+                    old_hwm_base REAL,
+                    new_hwm_base REAL,
+                    by TEXT,
+                    seq INTEGER NOT NULL
+                );
+                CREATE TRIGGER IF NOT EXISTS r9_cycle_events_no_update
+                BEFORE UPDATE ON r9_cycle_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'r9_cycle_events is append-only');
+                END;
+                CREATE TRIGGER IF NOT EXISTS r9_cycle_events_no_delete
+                BEFORE DELETE ON r9_cycle_events
+                BEGIN
+                    SELECT RAISE(ABORT, 'r9_cycle_events is append-only');
+                END;
                 """
             )
             self._create_approvals(conn)
@@ -836,6 +861,65 @@ class TradeJournal:
                 """,
                 (ts, kind, json.dumps(detail or {}, ensure_ascii=False), strategy_id),
             )
+
+    def append_r9_event(
+        self,
+        *,
+        account: str,
+        cycle_no: int,
+        from_state: str,
+        to_state: str,
+        kind: str,
+        risk_date: str | None,
+        nlv_base: float | None,
+        old_hwm_base: float | None,
+        new_hwm_base: float | None,
+        by: str | None,
+        seq: int,
+        when: datetime | None = None,
+    ) -> None:
+        ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO r9_cycle_events (
+                    ts_utc, account, cycle_no, from_state, to_state, kind,
+                    risk_date, nlv_base, old_hwm_base, new_hwm_base, by, seq
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ts,
+                    account,
+                    cycle_no,
+                    from_state,
+                    to_state,
+                    kind,
+                    risk_date,
+                    nlv_base,
+                    old_hwm_base,
+                    new_hwm_base,
+                    by,
+                    seq,
+                ),
+            )
+
+    def last_r9_seq(self) -> int | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT MAX(seq) AS seq FROM r9_cycle_events").fetchone()
+        if row is None or row["seq"] is None:
+            return None
+        return int(row["seq"])
+
+    def r9_event_count(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM r9_cycle_events").fetchone()
+        return int(row["n"])
+
+    def order_count(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS n FROM orders").fetchone()
+        return int(row["n"])
 
     def apply_strategy_fill(
         self,
