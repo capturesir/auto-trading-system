@@ -8,6 +8,7 @@ risk gate or the strategy engine.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -64,6 +65,7 @@ class OrderIntent(BaseModel):
     limit_offset_bps: float = 10
     limit_price_cap: float | None = None
     ref_price_at_create: float | None = None
+    valid_from: datetime | None = None
     stop_loss_pct: float | None = None
     protective: bool = False
     reduce_only: bool = False

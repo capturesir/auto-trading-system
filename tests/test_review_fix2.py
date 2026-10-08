@@ -214,6 +214,8 @@ def _session() -> ApprovalSession:
 
 
 def _intent() -> OrderIntent:
+    from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES
+
     return OrderIntent(
         client_id="cid-e2",
         symbol="AAPL",
@@ -223,6 +225,9 @@ def _intent() -> OrderIntent:
         currency="HKD",
         market="US",
         account=PIN,
+        strategy_id="ta_breakout52",
+        strategy_version=1,
+        spec_hash=CONFIRMED_SPEC_HASHES[("ta_breakout52", 1)],
     )
 
 

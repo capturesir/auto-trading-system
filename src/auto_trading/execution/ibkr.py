@@ -7,9 +7,11 @@ does not open a socket. Ports are the paper pair only.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import os
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -222,6 +224,54 @@ class PaperGateway:
         ).observe(accounts)
         return accounts
 
+    def disconnect(self) -> None:
+        """Drop the Gateway socket. Safe when connect never finished."""
+        ib = self._ib
+        self._ib = None
+        if ib is None:
+            return
+        with contextlib.suppress(Exception):
+            ib.disconnect()
+
+    async def snapshot_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
+        """Delayed paper quotes from the Gateway. An empty list is a failure."""
+        from ib_async import Stock
+
+        await self.connect()
+        ib = self._ib
+        try:
+            ib.reqMarketDataType(3)
+            found: list[dict[str, Any]] = []
+            for symbol in symbols:
+                spec = map_contract(symbol)
+                contract = Stock(spec.ib_symbol, spec.exchange, spec.currency)
+                ticker = ib.reqMktData(contract, "", False, False)
+                await asyncio.sleep(0.4)
+                last = getattr(ticker, "last", None)
+                if last is None or last != last:
+                    last = getattr(ticker, "delayedLast", None)
+                with contextlib.suppress(Exception):
+                    ib.cancelMktData(contract)
+                if last is None or last != last:
+                    continue
+                market_data_type = int(getattr(ticker, "marketDataType", 3) or 3)
+                stamp = datetime.now(UTC).isoformat(timespec="seconds")
+                kind = "delayed" if market_data_type in (3, 4) else "realtime"
+                found.append(
+                    {
+                        "symbol": symbol,
+                        "last": float(last),
+                        "as_of": stamp,
+                        "received_at": stamp,
+                        "source": "ibkr",
+                        "data_type": kind,
+                        "market_data_type": market_data_type,
+                    }
+                )
+            return found
+        finally:
+            self.disconnect()
+
     async def snapshot_account(self) -> dict[str, Any]:
         """Connect, check R0, and return NLV, positions, and open orders."""
         accounts = await self.connect()
@@ -268,13 +318,17 @@ class PaperGateway:
                 "open_orders": open_orders,
             }
         finally:
-            with contextlib.suppress(Exception):
-                ib.disconnect()
+            self.disconnect()
 
     async def submit_order(self, intent: Any) -> Any:
         """Place one order through the connected Gateway. E2 only."""
         await self.connect()
+        try:
+            return await self._submit_connected(intent)
+        finally:
+            self.disconnect()
 
+    async def _submit_connected(self, intent: Any) -> Any:
         class _Client:
             def __init__(self, ib: Any, accounts: list[str]) -> None:
                 self._ib = ib

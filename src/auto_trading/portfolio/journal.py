@@ -1023,6 +1023,43 @@ class TradeJournal:
             totals[ticker] = totals.get(ticker, 0.0) + float(row["qty"])
         return {ticker: qty for ticker, qty in totals.items() if abs(qty) > 1e-9}
 
+    def latest_order_state(self, intent_id: str) -> str | None:
+        """Most recent order state for this intent, if one was journaled."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT state FROM orders
+                WHERE intent_id = ?
+                ORDER BY rowid DESC
+                LIMIT 1
+                """,
+                (intent_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["state"])
+
+    def has_risk_check(self, intent_id: str, code: str, *, start: datetime, end: datetime) -> bool:
+        """True when this intent already recorded ``code`` inside the window."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT ts_utc FROM risk_checks
+                WHERE intent_id = ? AND code = ?
+                """,
+                (intent_id, code),
+            ).fetchall()
+        for row in rows:
+            try:
+                stamped = datetime.fromisoformat(str(row["ts_utc"]))
+            except ValueError:
+                continue
+            if stamped.tzinfo is None:
+                stamped = stamped.replace(tzinfo=UTC)
+            if start <= stamped < end:
+                return True
+        return False
+
     def intent_in_flight(self, intent_id: str) -> bool:
         """True once this intent has been journaled for send."""
         with self._connect() as conn:

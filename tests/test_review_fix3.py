@@ -154,7 +154,8 @@ def test_journal_is_written_before_send_and_a_repeat_is_skipped(
     seen: dict[str, str | None] = {}
 
     def place(intent: OrderIntent) -> None:
-        seen["state"] = TradeJournal(tmp_path).order_state(order_ref(intent.client_id, 1))
+        seen["client_id"] = intent.client_id
+        seen["state"] = TradeJournal(tmp_path).order_state(intent.client_id)
 
     intent = OrderIntent(
         client_id="cid-once",
@@ -165,6 +166,9 @@ def test_journal_is_written_before_send_and_a_repeat_is_skipped(
         account=PIN,
         market="US",
         currency="USD",
+        strategy_id="ta_breakout52",
+        strategy_version=1,
+        spec_hash=CONFIRMED_SPEC_HASHES[("ta_breakout52", 1)],
     )
     first = submit_once(
         tmp_path,
@@ -176,6 +180,7 @@ def test_journal_is_written_before_send_and_a_repeat_is_skipped(
         readonly=False,
     )
     assert first["sent"] == 1
+    assert seen["client_id"] == order_ref("cid-once", 1)
     assert seen["state"] == "SUBMITTING"
     again: list[OrderIntent] = []
     second = submit_once(
@@ -401,20 +406,22 @@ def test_watchdog_chrony_disk_and_gateway_restart(tmp_path: Path, monkeypatch) -
         "auto_trading.execution.services.restart_gateway",
         lambda: calls.append("restart") or True,
     )
-    for _ in range(2):
+    for _ in range(3):
         watchdog_once(tmp_path, moment)
-    assert calls == []
-    watchdog_once(tmp_path, moment)
     report = json.loads((tmp_path / "state" / "watchdog.json").read_text(encoding="utf-8"))
     assert "clock_skew" in report["issues"]
     assert "disk" in report["issues"]
-    assert report["gateway_restart"] is True
-    assert calls == ["restart"]
+    assert report["gateway_restart"] is False
+    assert calls == []
     paused = json.loads((tmp_path / "state" / "entry_pause.json").read_text(encoding="utf-8"))
     assert paused["watchdog"] is True
     sample = "Last offset     : +1.250000000 seconds\n"
     assert parse_chrony_tracking(sample) == 1.25
     assert parse_chrony_tracking("System time     : 0.5 seconds slow of NTP time\n") == 0.5
+    both = (
+        "System time     : 6.000000 seconds fast of NTP time\nLast offset     : +0.000100 seconds\n"
+    )
+    assert parse_chrony_tracking(both) == 6.0
 
 
 def test_nlv_fails_closed_without_base(tmp_path: Path, monkeypatch) -> None:

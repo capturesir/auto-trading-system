@@ -62,6 +62,22 @@ _CHRONY_SYSTEM = re.compile(
     r"System time\s*:\s*(\d+(?:\.\d+)?)\s+seconds\s+(fast|slow)",
     re.IGNORECASE,
 )
+_CHRONY_LEAP = re.compile(r"Leap status\s*:\s*(.+)", re.IGNORECASE)
+_CHRONY_REF = re.compile(r"Reference ID\s*:\s*(\S+)", re.IGNORECASE)
+_TERMINAL_STATES = frozenset(
+    {
+        "CANCELLED",
+        "FILLED",
+        "BROKER_REJECTED",
+        "EXPIRED",
+        "DECLINED",
+        "INTENT_REJECTED",
+        "RISK_REJECTED",
+        "APPROVAL_EXPIRED",
+    }
+)
+_OPENING = frozenset({"ENTRY", "ADD"})
+_intent_paths: dict[int, Path] = {}
 
 
 def _now() -> datetime:
@@ -376,12 +392,15 @@ def probe_gateway_login() -> dict[str, Any]:
     client_id = int(os.environ.get("IB_CLIENT_ID", "14"))
     gateway = PaperGateway(settings, client_id=client_id)
     try:
-        accounts = asyncio.run(asyncio.wait_for(gateway.connect(), timeout=5))
-    except PaperAccountError:
-        return {"logged_in": True, "accounts": [], "detail": "r0"}
-    except Exception:
-        return {"logged_in": False, "accounts": [], "detail": "unreachable"}
-    return {"logged_in": True, "accounts": list(accounts), "detail": "connected"}
+        try:
+            accounts = asyncio.run(asyncio.wait_for(gateway.connect(), timeout=5))
+        except PaperAccountError:
+            return {"logged_in": True, "accounts": [], "detail": "r0"}
+        except Exception:
+            return {"logged_in": False, "accounts": [], "detail": "unreachable"}
+        return {"logged_in": True, "accounts": list(accounts), "detail": "connected"}
+    finally:
+        gateway.disconnect()
 
 
 def gateway_probe(home: Path, now: datetime) -> dict[str, Any]:
@@ -460,6 +479,11 @@ def account_once(
         "gateway_logged_in": True,
     }
     _write_json(home / "state" / "account.json", payload)
+    quotes = data.get("quotes")
+    if isinstance(quotes, list) and quotes:
+        from auto_trading.market.quotes import write_quotes
+
+        write_quotes(home, now, [row for row in quotes if isinstance(row, dict)])
     _write_json(
         home / "state" / "gateway.json",
         {
@@ -495,18 +519,32 @@ def disk_usage_ratio(home: Path) -> float:
 
 
 def parse_chrony_tracking(text: str) -> float | None:
-    """Seconds of chrony offset. Positive means the clock is ahead."""
+    """Largest absolute offset among System time and Last offset."""
+    values: list[float] = []
     match = _CHRONY_OFFSET.search(text)
     if match:
-        return abs(float(match.group(1)))
+        values.append(abs(float(match.group(1))))
     system = _CHRONY_SYSTEM.search(text)
     if system:
-        return abs(float(system.group(1)))
-    return None
+        values.append(abs(float(system.group(1))))
+    if not values:
+        return None
+    return max(values)
+
+
+def chrony_unsynchronised(text: str) -> bool:
+    """True when leap status is not Normal or the reference id is zero."""
+    leap = _CHRONY_LEAP.search(text)
+    if leap is not None and leap.group(1).strip().lower() != "normal":
+        return True
+    ref = _CHRONY_REF.search(text)
+    if ref is None:
+        return False
+    return ref.group(1).strip().upper() in {"0", "0.0.0.0", "00000000"}
 
 
 def chrony_offset_sec() -> float | None:
-    """Chrony offset. None when chrony cannot be read. Not a self-comparison."""
+    """Chrony offset. None when chrony cannot be read or is not synchronised."""
     try:
         completed = subprocess.run(
             ["chronyc", "tracking"],
@@ -517,19 +555,56 @@ def chrony_offset_sec() -> float | None:
         )
     except (OSError, subprocess.TimeoutExpired):
         return None
-    return parse_chrony_tracking(completed.stdout or "")
+    text = completed.stdout or ""
+    if chrony_unsynchronised(text):
+        return None
+    return parse_chrony_tracking(text)
 
 
 def gateway_restart_argv() -> list[str]:
-    return ["systemctl", "restart", "ibgateway.service"]
+    """The only systemctl command trader is allowed to run."""
+    return ["sudo", "--non-interactive", "/usr/bin/systemctl", "restart", "ibgateway.service"]
 
 
 def restart_gateway() -> bool:
-    """Restart the paper Gateway. No-op unless the unit is allowed to connect."""
+    """Restart the paper Gateway. True only when systemctl exits 0."""
     if os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() != "1":
         return False
-    subprocess.run(gateway_restart_argv(), check=False)
-    return True
+    try:
+        completed = subprocess.run(
+            gateway_restart_argv(),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
+
+
+def _restart_failed(home: Path, now: datetime) -> None:
+    """Critical alert when the Gateway was not restarted. The word is not used."""
+    from auto_trading.alerts.critical import write_critical_event
+
+    marker = home / "state" / "gateway_restart_alert.txt"
+    stamp = now.astimezone(MACAU).strftime("%Y%m%dT%H")
+    previous = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+    if previous == stamp:
+        return
+    write_critical_event(
+        home,
+        kind="gateway_restart_failed",
+        reason_code="GATEWAY_RESTART_FAILED",
+        rule_id="W3",
+        now=now,
+        account=_pin(),
+        message_zh="Gateway 重啟沒有成功。新開倉維持暫停。",
+        resume_hint="在 VPS 上確認 sudoers 只允許 trader 重啟 ibgateway.service。",
+        detail={"unit": "ibgateway.service"},
+    )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(stamp + "\n", encoding="utf-8")
 
 
 def _set_pause(home: Path, key: str, active: bool) -> None:
@@ -606,13 +681,17 @@ def watchdog_once(home: Path, now: datetime) -> bool:
     path = home / "state" / "heartbeat.json"
     heartbeat_due = heartbeat_alert_due(path, now)
     report = _host_report(home, now)
-    streak = _watchdog_streak(home, bool(report["issues"]))
+    gateway_fault = "gateway_login" in report["issues"]
+    streak = _watchdog_streak(home, gateway_fault)
     report["fail_streak"] = streak
     report["gateway_restart"] = False
     report["gateway_restarted"] = False
-    if streak >= GATEWAY_RESTART_AFTER and streak % GATEWAY_RESTART_AFTER == 0:
+    if gateway_fault and streak >= GATEWAY_RESTART_AFTER and streak % GATEWAY_RESTART_AFTER == 0:
         report["gateway_restart"] = True
-        report["gateway_restarted"] = restart_gateway()
+        restarted = restart_gateway()
+        report["gateway_restarted"] = restarted
+        if not restarted:
+            _restart_failed(home, now)
     _write_json(home / "state" / "watchdog.json", report)
     alerted = False
     if heartbeat_due:
@@ -676,6 +755,8 @@ def sync_argv(root: Path, remote: str, *, direction: str) -> list[str]:
         row == "state/" or row.endswith("adr_premium_state.json") for row in rows
     ):
         raise RuntimeError("outbound sync must not carry box-owned state")
+    if any("confirmed_strategies.json" in row for row in rows):
+        raise RuntimeError("confirmed strategies are deployed by git, not sync")
     target = remote if remote.endswith("/") else remote + "/"
     local = f"{root}/"
     if direction == "out":
@@ -748,6 +829,24 @@ def audit_confirmed_hashes(home: Path, now: datetime) -> list[str]:
     return bad
 
 
+def _parse_time(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _has_valid_from(row: dict[str, Any], envelope: dict[str, Any]) -> bool:
+    if "valid_from" in row and row.get("valid_from") is not None:
+        return True
+    return "valid_from" in envelope and envelope.get("valid_from") is not None
+
+
 def _number(value: Any) -> float | None:
     try:
         return float(value)
@@ -790,6 +889,12 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
     limit = row.get("limit_price")
     digest = row.get("spec_hash", envelope.get("spec_hash"))
     strategy_id = row.get("strategy_id", envelope.get("strategy_id"))
+    offset = row.get("limit_offset_bps", envelope.get("limit_offset_bps"))
+    ref_price = row.get("ref_price_at_create", envelope.get("ref_price_at_create"))
+    cap = row.get("limit_price_cap", envelope.get("limit_price_cap"))
+    valid_from = _parse_time(row.get("valid_from", envelope.get("valid_from")))
+    if _has_valid_from(row, envelope) and valid_from is None:
+        valid_from = datetime(1970, 1, 1, tzinfo=UTC)
     return OrderIntent(
         client_id=str(row.get("client_id") or intent_id),
         symbol=symbol,
@@ -807,6 +912,10 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
         market=None if market is None else str(market),
         currency=None if currency is None else str(currency),
         lot_size=_whole(row.get("lot_size")),
+        limit_offset_bps=10 if _number(offset) is None else float(_number(offset) or 0),
+        limit_price_cap=None if cap is None else _number(cap),
+        ref_price_at_create=None if ref_price is None else _number(ref_price),
+        valid_from=valid_from,
     )
 
 
@@ -815,8 +924,11 @@ def load_intent_orders(home: Path) -> list[OrderIntent]:
     root = home / "intents"
     if not root.is_dir():
         return []
+    _intent_paths.clear()
     found: list[OrderIntent] = []
     for path in sorted(root.rglob("*.json")):
+        if "done" in path.relative_to(root).parts:
+            continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -833,6 +945,7 @@ def load_intent_orders(home: Path) -> list[OrderIntent]:
                 continue
             intent = _row_intent(row, envelope)
             if intent is not None:
+                _intent_paths[id(intent)] = path
                 found.append(intent)
     return found
 
@@ -850,7 +963,60 @@ def _broker_place(intent: OrderIntent) -> None:
     asyncio.run(gateway.submit_order(intent))
 
 
-def _production_context(home: Path, now: datetime) -> GateContext:
+def _account_is_fresh(account: dict[str, Any], now: datetime) -> bool:
+    """``account.json`` older than 90 seconds is not a current snapshot."""
+    stamped = _parse_time(account.get("at"))
+    if stamped is None:
+        return False
+    age = (now.astimezone(UTC) - stamped.astimezone(UTC)).total_seconds()
+    return 0 <= age <= _GATEWAY_STALE_SEC
+
+
+def _refresh_quotes(home: Path, now: datetime, symbols: list[str]) -> dict[str, Any]:
+    """File quotes, filled from the Gateway only when the unit is allowed to connect."""
+    from auto_trading.market.quotes import load_quotes, write_quotes
+
+    quotes = load_quotes(home)
+    if os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() != "1":
+        return quotes
+    missing = [symbol for symbol in symbols if symbol not in quotes]
+    if not missing:
+        return quotes
+    try:
+        import asyncio
+
+        from auto_trading.config import get_settings
+        from auto_trading.execution.ibkr import PaperGateway
+
+        gateway = PaperGateway(get_settings(), client_id=int(os.environ.get("IB_CLIENT_ID", "11")))
+        rows = asyncio.run(gateway.snapshot_quotes(missing))
+    except Exception:
+        return quotes
+    if not rows:
+        return quotes
+    path = home / "state" / "quotes.json"
+    existing: list[dict[str, Any]] = []
+    if path.is_file():
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            stored = payload.get("quotes") if isinstance(payload, dict) else None
+            if isinstance(stored, list):
+                existing = [row for row in stored if isinstance(row, dict)]
+        except (OSError, json.JSONDecodeError):
+            existing = []
+    fresh = {str(row.get("symbol")) for row in rows}
+    merged = [row for row in existing if str(row.get("symbol")) not in fresh]
+    merged.extend(rows)
+    write_quotes(home, now, merged)
+    return load_quotes(home)
+
+
+def _production_context(
+    home: Path,
+    now: datetime,
+    *,
+    symbols: list[str] | None = None,
+) -> GateContext:
     """Risk snapshot from the local files. Missing broker data fails closed."""
     from auto_trading.execution.risk_state import verify_risk_limits_file
     from auto_trading.risk.gate import Held
@@ -887,6 +1053,7 @@ def _production_context(home: Path, now: datetime) -> GateContext:
             recon_ok = not bool(json.loads(recon_path.read_text(encoding="utf-8")).get("freeze"))
         except (OSError, json.JSONDecodeError):
             recon_ok = False
+    connected = bool(account.get("gateway_logged_in")) and _account_is_fresh(account, now)
     return GateContext(
         port=_port() or 4002,
         accounts=accounts,
@@ -901,10 +1068,11 @@ def _production_context(home: Path, now: datetime) -> GateContext:
         now=now,
         kill_switch=(home / "KILL_SWITCH").is_file(),
         recon_ok=recon_ok,
-        connected=bool(account.get("gateway_logged_in")),
+        connected=connected,
         trading_home=home,
         approved_dir=_strategies_root(home),
         fx_to_base={"HKD": 1.0},
+        quotes=_refresh_quotes(home, now, list(symbols or [])),
     )
 
 
@@ -955,17 +1123,12 @@ def _file_approval(intent: OrderIntent, root: Path | None) -> str:
 
 
 def _bind_approved_hash(ctx: GateContext, intent: OrderIntent) -> None:
-    from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES, approved_row_hash
+    from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES
 
+    ctx.approved_hash = None
     if not intent.strategy_id or intent.strategy_version is None:
         return
-    pinned = CONFIRMED_SPEC_HASHES.get((intent.strategy_id, intent.strategy_version))
-    if pinned is not None:
-        ctx.approved_hash = pinned
-        return
-    ctx.approved_hash = approved_row_hash(
-        intent.strategy_id, intent.strategy_version, ctx.approved_dir
-    )
+    ctx.approved_hash = CONFIRMED_SPEC_HASHES.get((intent.strategy_id, intent.strategy_version))
 
 
 def _journal_then_send(
@@ -1019,8 +1182,89 @@ def _journal_then_send(
         intent_type=intent.intent_type,
     )
     journal.set_order_state(order_id, "SUBMITTING", when=now)
-    sender(intent)
+    wire = intent.model_copy(deep=True)
+    wire.client_id = order_id
+    sender(wire)
     journal.set_order_state(order_id, "SUBMITTED", when=now)
+
+
+def _stamp_quote(intent: OrderIntent, ctx: GateContext) -> None:
+    quote = ctx.quotes.get(intent.symbol)
+    if quote is None:
+        return
+    intent.quote_source = quote.source
+    intent.quote_data_type = quote.data_type
+    intent.quote_age_sec = quote.age_seconds(ctx.now)
+    intent.quote_delay_sec = quote.delay_sec
+    intent.quote_market_data_type = quote.market_data_type
+
+
+def _intent_clock(intent: OrderIntent, now: datetime) -> str | None:
+    """``INTENT_EXPIRED`` after that session's close. Not-yet-valid is not sent."""
+    if intent.valid_from is None:
+        return None
+    if now < intent.valid_from:
+        return "INTENT_NOT_YET"
+    from auto_trading.execution.sessions import session_close_on
+
+    market = intent.market or ""
+    try:
+        close = session_close_on(market, intent.valid_from)
+    except (ValueError, TypeError):
+        return "INTENT_EXPIRED"
+    if now >= close:
+        return "INTENT_EXPIRED"
+    return None
+
+
+def _apply_limit(intent: OrderIntent) -> str | None:
+    """Fill ``limit_price`` from the reference. A blank opening limit is refused."""
+    if intent.limit_price is not None:
+        return None
+    if intent.protective:
+        return None
+    from auto_trading.execution.pricing import reference_limit
+
+    market = intent.market or ""
+    limit, code = reference_limit(
+        market=market,
+        side=intent.side.value,
+        ref_price=intent.ref_price_at_create,
+        offset_bps=intent.limit_offset_bps,
+        cap=intent.limit_price_cap,
+    )
+    if code:
+        if intent.intent_type in _OPENING or intent.ref_price_at_create is not None:
+            return code
+        return None
+    intent.limit_price = limit
+    return None
+
+
+def _record_once(
+    journal: TradeJournal,
+    *,
+    symbol: str,
+    code: str,
+    intent_id: str,
+    now: datetime,
+) -> None:
+    start, end, _day = risk_window(now)
+    if journal.has_risk_check(intent_id, code, start=start, end=end):
+        return
+    journal.record_risk_check(symbol=symbol, code=code, intent_id=intent_id, when=now)
+
+
+def _queue_destinations(home: Path, retired: set[Path], kept: set[Path]) -> None:
+    dest_dir = home / "intents" / "done"
+    for path in retired - kept:
+        if not path.is_file():
+            continue
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / path.name
+        if dest.exists():
+            dest = dest_dir / f"{path.stem}-{path.stat().st_mtime_ns}{path.suffix}"
+        path.replace(dest)
 
 
 def submit_once(
@@ -1049,7 +1293,11 @@ def submit_once(
         return payload
     audit_confirmed_hashes(home, now)
     orders = list(intents) if intents is not None else load_intent_orders(home)
-    context = ctx if ctx is not None else _production_context(home, now)
+    context = (
+        ctx
+        if ctx is not None
+        else _production_context(home, now, symbols=[item.symbol for item in orders])
+    )
     approval = {"value": "auto"}
     active = session if session is not None else _production_session(home, now, approval)
     sender = place
@@ -1060,9 +1308,43 @@ def submit_once(
     gated: list[str] = []
     rejected: list[str] = []
     journal = TradeJournal(home)
+    retired: set[Path] = set()
+    kept: set[Path] = set()
     for intent in orders:
         key = intent.intent_id or intent.client_id
+        source = _intent_paths.get(id(intent))
         if journal.intent_in_flight(key):
+            if source is not None:
+                kept.add(source)
+            skipped += 1
+            continue
+        latest = journal.latest_order_state(key)
+        if latest in _TERMINAL_STATES:
+            if source is not None:
+                retired.add(source)
+            skipped += 1
+            continue
+        clock = _intent_clock(intent, now)
+        if clock == "INTENT_EXPIRED":
+            _record_once(journal, symbol=intent.symbol, code=clock, intent_id=key, now=now)
+            if source is not None:
+                retired.add(source)
+            rejected.append(clock)
+            skipped += 1
+            continue
+        if clock == "INTENT_NOT_YET":
+            _record_once(journal, symbol=intent.symbol, code=clock, intent_id=key, now=now)
+            if source is not None:
+                kept.add(source)
+            rejected.append(clock)
+            skipped += 1
+            continue
+        limit_code = _apply_limit(intent)
+        if limit_code:
+            _record_once(journal, symbol=intent.symbol, code=limit_code, intent_id=key, now=now)
+            if source is not None:
+                kept.add(source)
+            rejected.append(limit_code)
             skipped += 1
             continue
         _bind_approved_hash(context, intent)
@@ -1071,8 +1353,21 @@ def submit_once(
         blocked = intent.mode != "paper" or intent.live_size_multiplier is not None
         if code or blocked:
             reason = code or "LIVE_NOT_AUTHORIZED"
-            journal.record_risk_check(symbol=intent.symbol, code=reason, intent_id=key, when=now)
+            _record_once(journal, symbol=intent.symbol, code=reason, intent_id=key, now=now)
+            if source is not None:
+                kept.add(source)
             rejected.append(reason)
+            skipped += 1
+            continue
+        opening = intent.intent_type in _OPENING
+        missing_strategy = (
+            not intent.strategy_id or intent.spec_hash is None or intent.strategy_version is None
+        )
+        if opening and missing_strategy:
+            _record_once(journal, symbol=intent.symbol, code="R25", intent_id=key, now=now)
+            if source is not None:
+                kept.add(source)
+            rejected.append("R25")
             skipped += 1
             continue
         approval["value"] = _file_approval(intent, context.approved_dir)
@@ -1091,18 +1386,28 @@ def submit_once(
                         "quantity": intent.quantity,
                     },
                 )
+            if source is not None:
+                kept.add(source)
             skipped += 1
             continue
         if sender is None:
+            if source is not None:
+                kept.add(source)
             skipped += 1
             continue
+        _stamp_quote(intent, context)
         try:
             _journal_then_send(home, intent, active, now, sender)
         except Exception:
+            if source is not None:
+                kept.add(source)
             skipped += 1
             rejected.append("error")
             continue
+        if source is not None:
+            kept.add(source)
         sent += 1
+    _queue_destinations(home, retired, kept)
     payload = {
         "status": "open",
         "sent": sent,

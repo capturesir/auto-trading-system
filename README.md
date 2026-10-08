@@ -116,6 +116,8 @@ for signal in document.signals:
 
 四份現行草稿用到的確認與出場條件都在日線迴圈裡計算；不認識的條件在驗證策略時直接失敗。整張台股買不進、且零股關閉時，回測會改試 ADR。`news_event` v4 接受 `status` 為 new 或 update，可見時間用 `judged_at`，並以去掉 `-u` 後綴的原始 `news_id` 去重。再沿該市場行事曆找 T0 與下一個進場日，假期會往後推。日線下載走 Yahoo chart，先讀本機 parquet，失敗會重試。樣本外切分、試驗登記與偏差歸因寫在回測報告裡。核准雜湊吻合且模式是模擬時，`StrategyEngine.run` 會寫意圖檔，不會直接下單。G1–G4 只產出模擬盤評估報告，不改變模式。下單只走風控閘門，再由模擬帳戶的 IBKR 轉接器送出。本系統沒有任何開關可以改接真實帳戶。
 
+新策略要使用者先確認雜湊，然後用一個 PR 同時更新三處：`config/confirmed_strategies.json`（pin）、`strategies/registry.jsonl` 的 `event=approved`／`actor=user` 列，以及 `strategies/approved/` 裡的檔案。CI 檢查這三處的 id、版本和雜湊完全一致（`adr_premium_veto` 是規則，不是可交易策略，明確排除）。CI 通過、合併、再用 git 部署之後，啟動日誌裡的 hash12 必須和使用者確認的值相同。pin 檔只隨 git 部署，不在任何 rsync 清單裡。只在登記表加一行、或只在核准目錄放一個檔，開倉都會被 R25 拒絕。
+
 ## 設定與憑證
 
 帳號與連線資訊只從行程環境變數讀取，不寫進原始碼，程式也不會自動載入 `.env`。

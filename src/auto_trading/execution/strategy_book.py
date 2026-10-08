@@ -2,23 +2,49 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from auto_trading.jsonutil import loads_strict
-from auto_trading.strategy.registry import latest
+from auto_trading.strategy.registry import latest, read_events
 from auto_trading.strategy.spec import spec_hash
 
-REPO_STRATEGIES = Path(__file__).resolve().parents[3] / "strategies"
+log = logging.getLogger(__name__)
 
-# User-confirmed file hashes. R25 compares the bytes on disk with these
-# values and with the approved registry row. A registry line alone is not enough.
-CONFIRMED_SPEC_HASHES: dict[tuple[str, int], str] = {
-    ("sig_trend", 3): "sha256:9877996947f027efe89aa0991b23e93ac3e409c38660531109a2a5ce4404a334",
-    ("sig_pullback", 3): "sha256:d2449671d3124d5c2da214e2a71c999e17641a99fb7df9dbf7cb80549c53f231",
-    ("ta_breakout52", 1): "sha256:86046b4ceb98bb010e28fe219fac2fc72c5256d222e6f782d62f1f3b79066101",
-}
+REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_STRATEGIES = REPO_ROOT / "strategies"
+PIN_FILE = REPO_ROOT / "config" / "confirmed_strategies.json"
+# Rule rows are not tradable strategies. CI refuses any other exclusion.
+EXCLUDED_RULES = frozenset({"adr_premium_veto"})
+
+
+def load_confirmed_spec_hashes(path: Path | None = None) -> dict[tuple[str, int], str]:
+    """Pins from the git-deployed file. A registry row alone is not a pin."""
+    target = path or PIN_FILE
+    raw = target.read_bytes()
+    log.info("confirmed_strategies sha256=%s", hashlib.sha256(raw).hexdigest())
+    document = loads_strict(raw.decode("utf-8"))
+    rows = document.get("strategies")
+    if not isinstance(rows, list) or not rows:
+        raise ValueError("confirmed_strategies.json has no strategies")
+    pins: dict[tuple[str, int], str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("confirmed strategy row is not an object")
+        strategy_id = str(row.get("strategy_id") or "")
+        digest = str(row.get("spec_hash") or "")
+        version = int(row["version"])
+        if not strategy_id or not digest.startswith("sha256:"):
+            raise ValueError("confirmed strategy row is incomplete")
+        pins[(strategy_id, version)] = digest
+    return pins
+
+
+# Loaded once from config/confirmed_strategies.json. That file is not synced.
+CONFIRMED_SPEC_HASHES: dict[tuple[str, int], str] = load_confirmed_spec_hashes()
 
 
 def approved_dir(root: Path | None = None) -> Path:
@@ -66,8 +92,6 @@ def approved_row_hash(strategy_id: str, version: int, root: Path | None = None) 
     path = registry_path(root)
     if not path.is_file():
         return None
-    from auto_trading.strategy.registry import read_events
-
     found: str | None = None
     for row in read_events(path):
         if row.get("strategy_id") != strategy_id or row.get("version") != version:
@@ -101,12 +125,16 @@ def r25_code(
 ) -> str | None:
     """Recompute the file with the §3.4 hash and compare three values.
 
-    The file hash must equal the intent hash and an ``approved`` registry row.
-    The three confirmed strategies must also equal the pinned digests. A missing
-    file, a missing intent hash, or a mismatch rejects an opening order.
+    The file hash must equal the intent hash, an ``approved`` registry row, and
+    ``config/confirmed_strategies.json``. An opening order whose strategy is
+    not in that file is ``R25`` even when the registry has an approved row.
+    A missing file or a missing intent hash rejects an opening order.
     """
     if not strategy_id or version is None or not spec_hash_value:
         return "R25" if opening else None
+    pinned = CONFIRMED_SPEC_HASHES.get((strategy_id, version))
+    if opening and pinned is None:
+        return "R25"
     path = file_for(strategy_id, version, root)
     if path is None:
         return "R25" if opening else None
@@ -116,7 +144,6 @@ def r25_code(
         return "R25" if opening else None
     if digest != spec_hash_value:
         return "R25"
-    pinned = CONFIRMED_SPEC_HASHES.get((strategy_id, version))
     if pinned is not None and digest != pinned:
         return "R25"
     row_hash = approved_row_hash(strategy_id, version, root)
@@ -158,3 +185,83 @@ def startup_lines(root: Path | None = None) -> list[str]:
 
 def dump_strategy(document: dict[str, Any]) -> str:
     return json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+
+
+def _manifest_rows(path: Path) -> list[str]:
+    if not path.is_file():
+        return []
+    rows: list[str] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            rows.append(line)
+    return rows
+
+
+def user_approved_hashes(root: Path | None = None) -> dict[tuple[str, int], str]:
+    """``event=approved`` and ``actor=user``, excluding rule ids such as the veto."""
+    path = registry_path(root)
+    found: dict[tuple[str, int], str] = {}
+    for row in read_events(path):
+        if row.get("event") != "approved" or row.get("actor") != "user":
+            continue
+        strategy_id = str(row.get("strategy_id") or "")
+        if strategy_id in EXCLUDED_RULES:
+            continue
+        digest = row.get("spec_hash")
+        version = row.get("version")
+        if not strategy_id or not isinstance(digest, str) or not isinstance(version, int):
+            continue
+        found[(strategy_id, version)] = digest
+    return found
+
+
+def approved_file_hashes(root: Path | None = None) -> dict[tuple[str, int], str]:
+    """§3.4 hash of every file in ``strategies/approved``."""
+    found: dict[tuple[str, int], str] = {}
+    folder = approved_dir(root)
+    if not folder.is_dir():
+        return found
+    for path in sorted(folder.glob("*.json")):
+        document = load_approved(path)
+        strategy_id = str(document.get("id") or "")
+        version = document.get("version")
+        if not strategy_id or not isinstance(version, int):
+            raise ValueError(f"approved file {path.name} has no id or version")
+        found[(strategy_id, int(version))] = spec_hash(document)
+    return found
+
+
+def confirmed_source_errors(root: Path | None = None) -> list[str]:
+    """CI: the pin file, user-approved registry rows, and approved files agree.
+
+    ``adr_premium_veto`` is the only registry row that is not a tradable
+    strategy. The pin file must not appear on either sync list.
+    """
+    base = root or REPO_ROOT
+    errors: list[str] = []
+    pin_path = base / "config" / "confirmed_strategies.json"
+    try:
+        document = loads_strict(pin_path.read_text(encoding="utf-8"))
+        pins = load_confirmed_spec_hashes(pin_path)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        return [f"confirmed_strategies.json: {exc}"]
+    excluded = document.get("excluded_rules")
+    if not isinstance(excluded, list) or set(excluded) != EXCLUDED_RULES:
+        errors.append("excluded_rules must be adr_premium_veto only")
+    try:
+        files = approved_file_hashes(base / "strategies")
+    except (OSError, ValueError, TypeError) as exc:
+        errors.append(f"approved files: {exc}")
+        files = {}
+    registry = user_approved_hashes(base / "strategies")
+    if set(pins) != set(files) or set(pins) != set(registry):
+        errors.append("pin, registry, and approved files are not the same set")
+    for key, digest in pins.items():
+        if files.get(key) != digest or registry.get(key) != digest:
+            errors.append(f"{key[0]} v{key[1]} hash mismatch")
+    for name in ("sync_box_to_vps.txt", "sync_vps_to_box.txt"):
+        rows = _manifest_rows(base / "vps" / "deploy" / name)
+        if any("confirmed_strategies.json" in row for row in rows):
+            errors.append(f"{name} must not sync the pin file")
+    return errors

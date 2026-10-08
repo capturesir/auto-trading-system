@@ -49,6 +49,36 @@ def apply_quote(intent: Any, plan: LimitPlan) -> None:
     intent.quote_market_data_type = plan.market_data_type
 
 
+def reference_limit(
+    *,
+    market: str,
+    side: str,
+    ref_price: float | None,
+    offset_bps: float,
+    cap: float | None,
+) -> tuple[float | None, str | None]:
+    """Limit from ``ref_price_at_create`` plus ``limit_offset_bps``.
+
+    BUY rounds down to the tick and must not cross ``limit_price_cap``.
+    SELL rounds up. A missing reference cannot be sent.
+    """
+    if ref_price is None or ref_price <= 0:
+        return None, "LIMIT_UNAVAILABLE"
+    buy = side == "BUY"
+    factor = 1 + offset_bps / 10_000 if buy else 1 - offset_bps / 10_000
+    raw = ref_price * factor
+    if raw <= 0 or market not in {"US", "HK", "JP", "KR", "TW"}:
+        return None, "LIMIT_UNAVAILABLE"
+    if buy and cap is not None and ref_price > cap:
+        return None, "CHASE_CAP_EXCEEDED"
+    limit = align_tick(raw, tick_size(market, raw), buy=buy)
+    if buy and cap is not None:
+        limit = min(limit, align_tick(cap, tick_size(market, cap), buy=True))
+    if limit <= 0:
+        return None, "LIMIT_UNAVAILABLE"
+    return limit, None
+
+
 def align_tick(price: float, tick: float, *, buy: bool) -> float:
     """BUY rounds down. SELL rounds up."""
     steps = price / tick

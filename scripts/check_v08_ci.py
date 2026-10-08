@@ -270,6 +270,14 @@ def main() -> int:
         for item in extra:
             print(item, file=sys.stderr)
         return 1
+    from auto_trading.execution.strategy_book import confirmed_source_errors
+
+    pin_errors = confirmed_source_errors(ROOT)
+    if pin_errors:
+        print("confirmed strategies diverged:", file=sys.stderr)
+        for item in pin_errors:
+            print(item, file=sys.stderr)
+        return 1
     print("v08 checks ok")
     return 0
 

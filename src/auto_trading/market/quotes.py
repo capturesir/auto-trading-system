@@ -9,13 +9,18 @@ receipt time. Delayed freshness uses the receipt time.
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from auto_trading.alerts.pending import build_alert, write_pending
 from auto_trading.market.yahoo import public_quote
 from auto_trading.risk.gate import Quote
+
+log = logging.getLogger(__name__)
 
 FALLBACK_CODES = frozenset({10197, 354, 10167})
 
@@ -147,3 +152,89 @@ class QuoteRouter:
             created_at=when,
         )
         write_pending(self._home, alert, filename_stamp=when.strftime("%Y%m%dT%H%M%S"))
+
+
+def quotes_path(home: Path) -> Path:
+    return home / "state" / "quotes.json"
+
+
+def _opt_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _aware(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def write_quotes(home: Path, now: datetime, rows: list[dict[str, Any]]) -> None:
+    """Atomic quote file written by the account process."""
+    payload = {
+        "schema_version": "quotes/1.0",
+        "at": now.isoformat(timespec="seconds"),
+        "quotes": rows,
+    }
+    path = quotes_path(home)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def load_quotes(home: Path) -> dict[str, Quote]:
+    """Quotes from ``state/quotes.json``. A bad file yields no prices."""
+    path = quotes_path(home)
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    rows = payload.get("quotes") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return {}
+    found: dict[str, Quote] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("symbol") or "").strip()
+        if not symbol:
+            continue
+        try:
+            last = float(row["last"])
+            as_of = _aware(str(row["as_of"]))
+            received = _aware(str(row["received_at"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        market_data_type = row.get("market_data_type")
+        try:
+            typed = None if market_data_type is None else int(market_data_type)
+        except (TypeError, ValueError):
+            typed = None
+        quote = Quote(
+            last=last,
+            as_of=as_of,
+            bid=_opt_float(row.get("bid")),
+            ask=_opt_float(row.get("ask")),
+            source=str(row.get("source") or "ibkr"),
+            data_type=str(row.get("data_type") or "realtime"),
+            received_at=received,
+            market_data_type=typed,
+        )
+        if quote.data_type == "delayed":
+            log.info(
+                "delayed_quote symbol=%s source=%s market_data_type=%s delay_sec=%s",
+                symbol,
+                quote.source,
+                quote.market_data_type,
+                quote.delay_sec,
+            )
+        found[symbol] = quote
+    return found

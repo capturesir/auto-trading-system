@@ -329,13 +329,11 @@ def _r20(intent: OrderIntent, ctx: GateContext, account_qty: float) -> bool:
 
 def _r25_file(intent: OrderIntent, ctx: GateContext) -> str | None:
     opening = intent.intent_type in OPENING
-    identified = bool(intent.strategy_id) or intent.spec_hash is not None
-    identified = identified or intent.strategy_version is not None
     incomplete = (
         not intent.strategy_id or intent.spec_hash is None or intent.strategy_version is None
     )
     if incomplete:
-        if opening and identified and ctx.approved_dir is not None:
+        if opening and ctx.approved_dir is not None:
             return "R25"
         return None
     from auto_trading.execution.strategy_book import r25_code
@@ -615,13 +613,26 @@ def _quote_rules(intent: OrderIntent, ctx: GateContext) -> str | None:
     if quote.data_type == "delayed":
         if not paper or quote.market_data_type not in (3, 4):
             return "R22"
+        age = quote.age_seconds(ctx.now)
+        delay = quote.delay_sec
+        log.info(
+            "delayed_quote symbol=%s source=%s market_data_type=%s age_sec=%s delay_sec=%s",
+            intent.symbol,
+            quote.source,
+            quote.market_data_type,
+            age,
+            delay,
+        )
+        if age > MAX_QUOTE_DELAY_SEC or (delay is not None and delay > MAX_QUOTE_DELAY_SEC):
+            return "R22"
     elif quote.data_type != "realtime":
         return "R22"
-    if quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
-        return "R22"
-    delay = quote.delay_sec
-    if delay is not None and delay > MAX_QUOTE_DELAY_SEC:
-        return "QUOTE_DELAY_EXCEEDED"
+    else:
+        if quote.age_seconds(ctx.now) > ctx.quote_stale_sec:
+            return "R22"
+        delay = quote.delay_sec
+        if delay is not None and delay > MAX_QUOTE_DELAY_SEC:
+            return "QUOTE_DELAY_EXCEEDED"
     if intent.limit_price is not None and quote.last:
         drift = abs(intent.limit_price / quote.last - 1)
         if drift > 0.02 + 1e-9:

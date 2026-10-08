@@ -1,0 +1,4 @@
+# trader may restart only the paper Gateway unit. No other command is listed.
+# Install at deploy time: sudo visudo -cf this file, then copy it to
+# /etc/sudoers.d/trader-ibgateway with mode 0440.
+trader ALL=(root) NOPASSWD: /usr/bin/systemctl restart ibgateway.service

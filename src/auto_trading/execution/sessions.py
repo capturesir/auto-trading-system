@@ -26,6 +26,25 @@ BLOCK_ALL = frozenset({"closed", "lunch", "open_auction", "close_auction"})
 BLOCK_ENTRIES = BLOCK_ALL | {"open_buffer", "close_buffer"}
 
 
+def session_close_on(market: str, moment: datetime) -> datetime:
+    """Close of the session that contains ``moment``.
+
+    An unknown market or a day that is not a session fails closed: the
+    moment itself is already the close.
+    """
+    if moment.tzinfo is None:
+        raise ValueError("session clock needs a timezone")
+    if market not in CALENDARS:
+        return moment
+    calendar = _calendar(CALENDARS[market])
+    local = pd.Timestamp(moment).tz_convert(calendar.tz)
+    label = pd.Timestamp(local.date())
+    if not calendar.is_session(label):
+        return moment
+    closed = calendar.session_close(label)
+    return closed.to_pydatetime()
+
+
 def session_window(market: str, now: datetime) -> str:
     """Name the window ``now`` falls in for ``market``.
 
