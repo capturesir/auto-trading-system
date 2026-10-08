@@ -536,6 +536,16 @@ def test_t26_approved_hashes_and_a_changed_byte_is_r25(tmp_path: Path) -> None:
     rows = {row["strategy_id"]: row for row in roster()}
     assert rows["sig_trend"]["hash12"] == "9877996947f0"
     assert rows["sig_pullback"]["hash12"] == "d2449671d312"
+    assert rows["ta_breakout52"]["hash12"] == "86046b4ceb98"
+    assert rows["sig_trend"]["spec_hash"] == (
+        "sha256:9877996947f027efe89aa0991b23e93ac3e409c38660531109a2a5ce4404a334"
+    )
+    assert rows["sig_pullback"]["spec_hash"] == (
+        "sha256:d2449671d3124d5c2da214e2a71c999e17641a99fb7df9dbf7cb80549c53f231"
+    )
+    assert rows["ta_breakout52"]["spec_hash"] == (
+        "sha256:86046b4ceb98bb010e28fe219fac2fc72c5256d222e6f782d62f1f3b79066101"
+    )
     assert rows["ta_breakout52"]["approval"] == "auto"
     document = loads_strict((ROOT / "strategies/approved/ta_breakout52.v1.json").read_text())
     assert document["trigger"]["type"] == "market"

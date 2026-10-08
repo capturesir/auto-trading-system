@@ -166,22 +166,38 @@ def _first_start(home: Path, journal: TradeJournal) -> bool:
     return no_file and journal.r9_event_count() == 0 and journal.order_count() == 0
 
 
+def _has_history(home: Path) -> bool:
+    """True when this home has already traded or recorded a cycle event."""
+    path = home / "data" / "trading.db"
+    if not path.is_file():
+        return False
+    journal = TradeJournal(home)
+    return journal.r9_event_count() > 0 or journal.order_count() > 0
+
+
+def _halt_view(document: dict[str, Any] | None) -> dict[str, Any]:
+    payload = document or {}
+    return {
+        "state": HALTED,
+        "size_mult": 0.0,
+        "cooldown_days_done": int(payload.get("cooldown_days_done") or 0),
+        "half_size_days_done": int(payload.get("half_size_days_done") or 0),
+        "hwm": float(payload.get("hwm_base") or 0),
+        "halt_risk_date": payload.get("halt_risk_date"),
+        "resume_pending": False,
+        "cycle_no": int(payload.get("cycle_no") or 0),
+    }
+
+
 def cycle_view(home: Path) -> dict[str, Any] | None:
-    """Read-only view. A missing file is not a halt (first-start homes stay active)."""
+    """Read-only view. A missing file stays halted once this home has history."""
     document, problem = _read(home)
-    if document is None or problem == "missing":
+    if problem == "missing":
+        if _has_history(home):
+            return _halt_view(None)
         return None
-    if problem is not None:
-        return {
-            "state": HALTED,
-            "size_mult": 0.0,
-            "cooldown_days_done": 0,
-            "half_size_days_done": 0,
-            "hwm": float(document.get("hwm_base") or 0),
-            "halt_risk_date": document.get("halt_risk_date"),
-            "resume_pending": False,
-            "cycle_no": int(document.get("cycle_no") or 0),
-        }
+    if document is None or problem is not None:
+        return _halt_view(document)
     return _view(document)
 
 
@@ -416,10 +432,10 @@ def _halt_book(home: Path, journal: TradeJournal) -> None:
     folder = home / "state"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "strategy_runtime.json").write_text(
-        json.dumps({"status": "halted"}, ensure_ascii=False) + "\n",
+        json.dumps({"status": "exit_only"}, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    journal.cancel_unfilled_orders()
+    journal.cancel_unfilled_orders(keep_exits=True)
 
 
 def _record_reset(home: Path, journal: TradeJournal, event: dict[str, Any], now: datetime) -> None:

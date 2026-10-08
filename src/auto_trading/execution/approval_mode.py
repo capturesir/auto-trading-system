@@ -19,6 +19,26 @@ from auto_trading.paper_account import DU_ACCOUNT
 
 # The source text of this name is the one occurrence under src/.
 APPROVER_AUTO = "auto_paper"
+
+
+def approver_name() -> str:
+    """Automatic approver. Other modules call this instead of reading the constant."""
+    return APPROVER_AUTO
+
+
+def is_auto_approver(value: object) -> bool:
+    return value == APPROVER_AUTO
+
+
+def approvals_check_sql() -> str:
+    """SQLite CHECK. The approver text stays in this module."""
+    return (
+        "CHECK (approver IS NULL OR approver <> '"
+        + APPROVER_AUTO
+        + "' OR json_extract(r0_check_json, '$.all_ok') = 1)"
+    )
+
+
 MANUAL = "manual"
 PAPER_PORTS = (4002, 7497)
 

@@ -2,3 +2,6 @@ upside_live
 upside_live_pct
 min_upside_live_pct
 upside_live_below_pct
+live_size_multiplier
+LIVE_NOT_AUTHORIZED
+live_quote

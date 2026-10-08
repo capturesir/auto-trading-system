@@ -46,8 +46,6 @@ class HashDeterminism(unittest.TestCase):
         s = json.load(open(os.path.join(ROOT, 'strategies/approved/ta_breakout52.v1.json'), encoding='utf-8'))
         got = T.spec_hash(s)
         want = 'sha256:86046b4ceb98bb010e28fe219fac2fc72c5256d222e6f782d62f1f3b79066101'
-        if got != want:
-            self.skipTest('approved file is the reconstructed digest, not the published vector')
         self.assertEqual(got, want)
 
 class FilterEdges(unittest.TestCase):
@@ -98,8 +96,6 @@ class RealArchive(unittest.TestCase):
         if not os.path.exists(meta): self.skipTest('no archive yet')
         rc = subprocess.run([sys.executable, os.path.join(os.path.dirname(HERE), 'verify_pool.py')], capture_output=True, text=True)
         blob = rc.stdout + rc.stderr
-        if rc.returncode != 0 and 'filters_hash' in blob and 'MISMATCH' in blob:
-            self.skipTest('reconstructed strategy filters differ from the published pool meta')
         self.assertEqual(rc.returncode, 0, blob)
     def test_rebuild_reproduces_bytes(self):
         meta = os.path.join(ROOT, 'data/universe/ta_pool.meta.json')

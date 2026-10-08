@@ -33,6 +33,7 @@ def build_risk_limits(
     recon_freeze: bool = False,
     r0_violation: bool = False,
     infra_pause: bool = False,
+    trading_home: Path | None = None,
 ) -> dict[str, Any]:
     """One snapshot. ``trading_scope`` is fixed and is not hashed.
 
@@ -40,7 +41,6 @@ def build_risk_limits(
     daily loss, drawdown, and reconciliation freeze instead of fixed values.
     """
     limits = dict(EXPECTED_LIMITS)
-    order_cap = min(nlv * limits["R1_order_size_pct_nlv"], limits["R2_max_order_notional_base"])
     hwm_base = nlv if hwm is None else hwm
     day_start = nlv if day_start_nlv is None else day_start_nlv
     drawdown = (nlv / hwm_base - 1) if hwm_base else 0.0
@@ -51,6 +51,18 @@ def build_risk_limits(
         r9_state = "warn"
     else:
         r9_state = "normal"
+    size_mult = 1.0
+    if trading_home is not None:
+        from auto_trading.risk.r9_state import cycle_view
+
+        view = cycle_view(trading_home)
+        if view is not None and view.get("state") == "HALTED_COOLDOWN":
+            r9_state = "halt"
+        elif view is not None and view.get("state") == "HALF_SIZE":
+            size_mult = float(view.get("size_mult") or 0.5)
+    order_cap = (
+        min(nlv * limits["R1_order_size_pct_nlv"], limits["R2_max_order_notional_base"]) * size_mult
+    )
     stamp = now.isoformat(timespec="seconds")
     suffix = account[-4:] if len(account) >= 4 else account
     accounts: list[dict[str, Any]] = []

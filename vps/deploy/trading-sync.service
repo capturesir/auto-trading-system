@@ -1,0 +1,9 @@
+[Unit]
+Description=Paper file sync
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/srv/trading
+Environment=TRADING_HOME=/srv/trading
+ExecStart=/srv/trading/.venv/bin/python -m auto_trading.execution sync

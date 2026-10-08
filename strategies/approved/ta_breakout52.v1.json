@@ -3,9 +3,9 @@
   "id": "ta_breakout52",
   "version": 1,
   "mode": "paper",
-  "name": "52週新高突破",
+  "name": "52 週新高突破（純技術，獨立技術倉）",
   "author": "b_group",
-  "created_at": "2026-10-06T21:55:00+08:00",
+  "created_at": "2026-10-08T09:00:00+08:00",
   "parent_version": null,
   "markets": [
     "US",
@@ -17,12 +17,10 @@
   "universe": {
     "source": "ta_pool",
     "asset_type": "equity",
-    "exclude_pending_removal": true,
-    "one_per_issuer_group": true,
     "pool": {
       "base_indices": {
         "US": [
-          "SP500",
+          "SPX",
           "NDX"
         ],
         "JP": [
@@ -58,12 +56,16 @@
         "TW": 10,
         "KR": 1000
       },
+      "max_lot_cost": "order_cap",
       "lot_price_buffer_pct": 2.0,
       "min_history_sessions": 260
-    }
+    },
+    "one_per_issuer_group": true
   },
   "trigger": {
-    "type": "market"
+    "type": "market",
+    "side": "BUY",
+    "evaluate_at": "close"
   },
   "confirm": {
     "all_of": [
@@ -82,6 +84,7 @@
     "size": {
       "type": "pct_equity",
       "value": 5.0,
+      "max_position_pct": 5.0,
       "max_adv20_pct": 5.0
     },
     "order": {

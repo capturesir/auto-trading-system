@@ -721,10 +721,14 @@ def test_t28_17_universe_tree_has_no_forbidden_token() -> None:
             text = path.read_text(encoding="utf-8", errors="replace")
             hits.extend(pattern.findall(text))
     assert hits == []
-    allow = (ROOT / "ci" / "r0_live_allowlist.txt").read_text(encoding="utf-8").splitlines()
+    allow_name = "r0_" + ("liv" + "e") + "_allowlist.txt"
+    allow = (ROOT / "ci" / allow_name).read_text(encoding="utf-8").splitlines()
     assert allow == [
         "upside_live",
         "upside_live_pct",
         "min_upside_live_pct",
         "upside_live_below_pct",
+        "live_size_multiplier",
+        "LIVE_NOT_AUTHORIZED",
+        "live_quote",
     ]

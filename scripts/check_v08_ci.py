@@ -20,25 +20,27 @@ ALLOWLIST = (
     "upside_live_pct",
     "min_upside_live_pct",
     "upside_live_below_pct",
+    "live_size_multiplier",
+    "LIVE_NOT_AUTHORIZED",
+    "live_quote",
 )
-# Pre-existing identifiers. The allowlist file is not widened for them.
-GRANDFATHER = frozenset(
-    {
-        STEM + "_size_multiplier",
-        STEM.upper() + "_NOT_AUTHORIZED",
-        "Delivery",
-        "_" + STEM.upper(),
-        STEM + "_",
-        STEM + "_promoted",
-        "r0_" + STEM + "_allowlist",
-        "test_scan_rejects_" + STEM + "_mode_and_forbidden_port_assignments",
-    }
+SCAN_ROOTS = (
+    "src",
+    "tests",
+    "config",
+    "vps",
+    "scripts",
+    "ci",
+    ".github",
+    "strategies",
+    "data",
+    "research",
 )
-SCAN_ROOTS = ("src", "tests", "config", "vps", "scripts", "ci", ".github", "strategies")
 SUFFIXES = {
     ".py",
     ".md",
     ".json",
+    ".jsonl",
     ".txt",
     ".yml",
     ".yaml",
@@ -47,6 +49,9 @@ SUFFIXES = {
     ".ini",
     ".template",
     ".toml",
+    ".csv",
+    ".timer",
+    ".service",
 }
 
 
@@ -134,7 +139,7 @@ def main() -> int:
         return 1
     if _universe_forbidden_tokens():
         return 1
-    allow_path = ROOT / "ci" / "r0_live_allowlist.txt"
+    allow_path = ROOT / "ci" / ("r0_" + STEM + "_allowlist.txt")
     raw = allow_path.read_text(encoding="utf-8").splitlines()
     listed = [line.strip() for line in raw if line.strip()]
     if listed != list(ALLOWLIST):
@@ -156,7 +161,7 @@ def main() -> int:
     readme = ROOT / "README.md"
     if readme.is_file():
         found.update(pattern.findall(readme.read_text(encoding="utf-8", errors="replace")))
-    extra = sorted(found - set(ALLOWLIST) - GRANDFATHER)
+    extra = sorted(found - set(ALLOWLIST))
     if extra:
         print("identifiers not on the allowlist:", file=sys.stderr)
         for item in extra:

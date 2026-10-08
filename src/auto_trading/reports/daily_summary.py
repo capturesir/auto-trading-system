@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from auto_trading.execution.approval_mode import APPROVER_AUTO
+from auto_trading.execution.approval_mode import approver_name
 from auto_trading.execution.breakers import flags, risk_window
 from auto_trading.portfolio.journal import TradeJournal
 from auto_trading.reports.benchmarks import build_benchmarks, write_monthly_review
@@ -74,7 +74,7 @@ def validate_daily_summary(payload: dict[str, Any]) -> None:
         if market not in payload["by_market"]:
             raise ValueError(market)
     approvals = payload["approvals"]
-    for key in (APPROVER_AUTO, "user", "reapproved", "chase_reapproval_exceeded", "expired"):
+    for key in (approver_name(), "user", "reapproved", "chase_reapproval_exceeded", "expired"):
         if key not in approvals:
             raise ValueError("approvals")
     block = payload["benchmarks"]
@@ -289,7 +289,7 @@ def write_daily_summary(
         "trading_scope": "paper_only",
         "base_currency": "HKD",
         "approvals": {
-            APPROVER_AUTO: approval_counts.get("auto", 0),
+            approver_name(): approval_counts.get("auto", 0),
             "user": approval_counts.get("user", 0),
             "reapproved": approval_counts.get("reapproved", 0),
             "chase_reapproval_exceeded": approval_counts.get("chase", 0),
@@ -378,6 +378,23 @@ def write_daily_summary(
     return payload
 
 
+def _benchmark_na(trading_home: Path, now: datetime, exc: Exception) -> None:
+    """Record a comparison failure. The summary still writes."""
+    local = now.astimezone(MACAU)
+    path = trading_home / "logs" / f"events_{local.strftime('%Y%m%d')}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(
+        {
+            "event": "benchmark_na",
+            "na_reason": "benchmark_error",
+            "error": type(exc).__name__,
+        },
+        ensure_ascii=False,
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
 def _benchmarks(
     trading_home: Path,
     now: datetime,
@@ -395,5 +412,13 @@ def _benchmarks(
             get=benchmark_get,
             clock=benchmark_clock,
         )
-    except (OSError, ValueError, TypeError):
-        return None
+    except Exception as exc:
+        _benchmark_na(trading_home, now, exc)
+        return {
+            "paper_start_date": None,
+            "us_trade_date": None,
+            "paper": None,
+            "items": [],
+            "status": "n/a",
+            "na_reason": "benchmark_error",
+        }

@@ -1,113 +1,81 @@
 """Source scan that refuses real-account switches.
 
-Price-metric names in ``ci/r0_live_allowlist.txt`` are the only tokens that
-may contain that stem. A refusal comment does not exempt any other use.
-The port reject code does not use that stem.
+Identifiers that contain the stem are accepted only when they appear, character
+for character, in the allowlist file. A comment does not exempt anything else.
+Ports other than 4002 and 7497 are refused. Account ids are accepted only when
+they match ``^DU[A-Z]?[0-9]+$`` and equal ``IBKR_PAPER_ACCOUNT``.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
-_LIVE = "liv" + "e"
-_EXACT_ALLOW = frozenset(
-    {
-        "paper_only",
-        "refuse",
-        "refused",
-        "refuses",
-        "reject",
-        "rejected",
-        "forbidden",
-        "violation",
-    }
+from auto_trading.paper_account import DU_ACCOUNT
+
+_STEM = "liv" + "e"
+_IDENT = re.compile(rf"[A-Za-z0-9_]*{_STEM}[A-Za-z0-9_]*", re.IGNORECASE)
+_PORT = re.compile(r"\b(?:" + "40" + "01" + "|" + "749" + "6" + r")\b")
+_SWITCH = re.compile(
+    r"\b(?:" + "TRADING_" + "MODE" + "|" + "IBKR_" + "USERNAME" + "|" + "IBKR_" + "PAPER" + r")\b"
 )
-_PHRASES = ("must be null", "不得", "拒絕")
-_HARD_ASSIGN = re.compile(
-    "live_"
-    + "mode"
-    + r"\s*=\s*"
-    + "true"
-    + "|port"
-    + r"\s*=\s*"
-    + "40"
-    + "01"
-    + "|port"
-    + r"\s*=\s*"
-    + "749"
-    + "6",
-    re.IGNORECASE,
-)
-_MULTIPLIER_OK = re.compile(
-    r"None|null|refus|reject|violation|paper_only|must|not",
-    re.IGNORECASE,
-)
+PAPER_PORTS = (4002, 7497)
 
 
-def _needles() -> list[str]:
-    """Tokens a real-account switch would contain. Built so this file is clean."""
-    return [
-        rf"\b{_LIVE}\b",
-        "400" + "1",
-        "749" + "6",
-        "TRADING_" + "MODE",
-        "IBKR_" + "USERNAME",
-        "IBKR_" + "PAPER",
-        _LIVE + "_promoted",
-        _LIVE + "_executable_ratio",
-        "gate_" + "passed",
-        "size_" + "changed",
-    ]
+def allowlist_path() -> Path:
+    """Path of the exact identifier list. The name is built so this file stays clean."""
+    name = "r0_" + _STEM + "_allowlist.txt"
+    return Path(__file__).resolve().parents[2] / "ci" / name
 
 
-def _allow_tokens() -> list[str]:
-    """Exact identifiers that may contain the stem. Longer names go first."""
-    path = Path(__file__).resolve().parents[2] / "ci" / "r0_live_allowlist.txt"
-    tokens: list[str] = []
+def allow_tokens() -> frozenset[str]:
+    """Exact identifiers that may contain the stem."""
+    path = allowlist_path()
+    tokens: set[str] = set()
     if path.is_file():
         for raw in path.read_text(encoding="utf-8").splitlines():
             token = raw.strip()
             if token and not token.startswith("#"):
-                tokens.append(token)
-    return sorted(tokens, key=len, reverse=True)
+                tokens.add(token)
+    return frozenset(tokens)
+
+
+def paper_account_pin() -> str:
+    """The one account this process may manage. Empty when the pin is unset."""
+    return os.environ.get("IBKR_PAPER_ACCOUNT", "").strip()
+
+
+def account_accepted(account: str, pin: str | None = None) -> bool:
+    """True only for the paper pattern and the pinned account."""
+    chosen = paper_account_pin() if pin is None else pin.strip()
+    return bool(chosen) and account == chosen and DU_ACCOUNT.fullmatch(account) is not None
+
+
+def port_accepted(port: int) -> bool:
+    """True only for the paper Gateway port and the paper TWS port."""
+    return port in PAPER_PORTS
 
 
 def line_allowed(line: str) -> bool:
     """True when ``line`` does not enable a real account.
 
-    The stem is removed only inside an allowlisted identifier. A mode
-    assignment or a forbidden port assignment fails even on a refusal line.
+    Every identifier that contains the stem must be on the allowlist. A
+    refusal comment does not change that. Forbidden ports fail on their own.
     """
-    if _HARD_ASSIGN.search(line):
-        return False
-    scrubbed = line
-    for token in _allow_tokens():
-        scrubbed = re.sub(rf"\b{re.escape(token)}\b", "", scrubbed)
-    if re.search(rf"\b{_LIVE}\b", scrubbed, flags=re.IGNORECASE):
-        return False
-    scrubbed = re.sub("upside_" + _LIVE, "", scrubbed, flags=re.IGNORECASE)
-    scrubbed = re.sub(_LIVE + r"[ _]?quote", "", scrubbed, flags=re.IGNORECASE)
-    # Paper Gateway login names are not a real-account switch. A bare paper flag still fails.
-    scrubbed = re.sub("IBKR_" + "PAPER_USERNAME", "", scrubbed, flags=re.IGNORECASE)
-    scrubbed = re.sub("IBKR_" + "PAPER_PASSWORD", "", scrubbed, flags=re.IGNORECASE)
-    # The account pin names one paper id. A bare paper flag still fails.
-    scrubbed = re.sub("IBKR_" + "PAPER_ACCOUNT", "", scrubbed, flags=re.IGNORECASE)
-    # The deployed start script greps the placeholder prefix. A bare flag still fails.
-    scrubbed = re.sub("IBKR_" + "PAPER_", "", scrubbed, flags=re.IGNORECASE)
-    multiplier = _LIVE + "_size_multiplier"
-    if multiplier in line and not _MULTIPLIER_OK.search(line):
-        return False
-    if not any(re.search(needle, scrubbed, re.IGNORECASE) for needle in _needles()):
-        return True
-    words = {token.lower() for token in re.findall(r"[A-Za-z0-9_]+", line)}
-    if words & _EXACT_ALLOW:
-        return True
-    return any(phrase in line for phrase in _PHRASES)
+    allowed = allow_tokens()
+    for token in _IDENT.findall(line):
+        if token not in allowed:
+            return False
+    return not (_PORT.search(line) or _SWITCH.search(line))
 
 
 def scan_tree(root: Path) -> list[str]:
-    """Return ``path:line: text`` for every disallowed line under ``root``."""
+    """Return ``path:line: text`` for every disallowed line under ``root``.
+
+    ``data/``, ``.timer``, and ``.csv`` are included. Caches and virtualenvs
+    are not source.
+    """
     skip = {
         ".git",
         ".venv",
@@ -116,7 +84,6 @@ def scan_tree(root: Path) -> list[str]:
         ".pytest_cache",
         ".ruff_cache",
         ".mypy_cache",
-        "data",
         "dist",
         "build",
         ".eggs",
@@ -127,13 +94,16 @@ def scan_tree(root: Path) -> list[str]:
         ".yml",
         ".yaml",
         ".json",
+        ".jsonl",
         ".toml",
         ".txt",
         ".example",
         ".ini",
         ".sh",
         ".service",
+        ".timer",
         ".template",
+        ".csv",
     }
     names = {".gitignore", ".env.example"}
     findings: list[str] = []

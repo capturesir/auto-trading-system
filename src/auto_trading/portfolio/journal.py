@@ -226,13 +226,9 @@ class TradeJournal:
 
     def _create_approvals(self, conn: sqlite3.Connection) -> None:
         """Approvals table. The check value is filled from the mode constant."""
-        from auto_trading.execution.approval_mode import APPROVER_AUTO
+        from auto_trading.execution.approval_mode import approvals_check_sql
 
-        check = (
-            "CHECK (approver IS NULL OR approver <> '"
-            + APPROVER_AUTO
-            + "' OR json_extract(r0_check_json, '$.all_ok') = 1)"
-        )
+        check = approvals_check_sql()
         conn.execute(
             "CREATE TABLE IF NOT EXISTS approvals ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -468,8 +464,12 @@ class TradeJournal:
             )
         self._order_event(order_id, "INTENT_RECEIVED", when)
 
-    def cancel_unfilled_orders(self) -> list[str]:
-        """Request cancellation of working orders that are not protective stops."""
+    def cancel_unfilled_orders(self, *, keep_exits: bool = False) -> list[str]:
+        """Request cancellation of working orders that are not protective stops.
+
+        ``keep_exits`` leaves resting EXIT and REDUCE orders in place. Protective
+        stops are always left in place.
+        """
         working = (
             "INTENT_RECEIVED",
             "DRAFT",
@@ -480,11 +480,14 @@ class TradeJournal:
             "PARTIALLY_FILLED",
         )
         placeholders = ", ".join("?" for _ in working)
+        extra = ""
+        if keep_exits:
+            extra = " AND UPPER(COALESCE(intent_type, '')) NOT IN ('EXIT', 'REDUCE')"
         with self._connect() as conn:
             rows = conn.execute(
                 f"""
                 SELECT order_id FROM orders
-                WHERE COALESCE(protective, 0) = 0 AND state IN ({placeholders})
+                WHERE COALESCE(protective, 0) = 0 AND state IN ({placeholders}){extra}
                 """,
                 working,
             ).fetchall()
@@ -788,7 +791,7 @@ class TradeJournal:
         return int(row["n"])
 
     def summary_approvals(self, start: datetime, end: datetime) -> dict[str, int]:
-        from auto_trading.execution.approval_mode import APPROVER_AUTO
+        from auto_trading.execution.approval_mode import is_auto_approver
 
         start_s = start.astimezone(UTC).isoformat(timespec="seconds")
         end_s = end.astimezone(UTC).isoformat(timespec="seconds")
@@ -814,7 +817,7 @@ class TradeJournal:
                 """,
                 (start_s, end_s),
             ).fetchone()
-        auto = sum(1 for row in rows if row["approver"] == APPROVER_AUTO and row["attempt"] == 1)
+        auto = sum(1 for row in rows if is_auto_approver(row["approver"]) and row["attempt"] == 1)
         reapproved = sum(1 for row in rows if row["attempt"] == 2)
         user = sum(1 for row in rows if row["approver"] == "user")
         return {

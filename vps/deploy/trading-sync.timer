@@ -1,0 +1,10 @@
+[Unit]
+Description=Sync paper files every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=trading-sync.service
+
+[Install]
+WantedBy=timers.target

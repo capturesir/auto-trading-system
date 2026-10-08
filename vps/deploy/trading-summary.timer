@@ -1,0 +1,11 @@
+[Unit]
+Description=Write the daily summary at 06:00 Macau time
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Timezone=Asia/Macau
+Persistent=true
+Unit=trading-summary.service
+
+[Install]
+WantedBy=timers.target

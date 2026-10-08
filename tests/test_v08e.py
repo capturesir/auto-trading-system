@@ -97,15 +97,22 @@ def _buy(**kwargs: object) -> OrderIntent:
     return OrderIntent(**payload)
 
 
-def _insert(home: Path, order_id: str, *, protective: bool) -> None:
+def _insert(
+    home: Path,
+    order_id: str,
+    *,
+    protective: bool,
+    intent_type: str | None = None,
+) -> None:
     TradeJournal(home)
+    kind = intent_type or ("EXIT" if protective else "ENTRY")
     with sqlite3.connect(home / "data" / "trading.db") as conn:
         conn.execute(
             """
             INSERT INTO orders (order_id, intent_id, seq, symbol, state, intent_type, protective)
             VALUES (?, ?, 1, 'AAPL', 'SUBMITTED', ?, ?)
             """,
-            (order_id, order_id, "EXIT" if protective else "ENTRY", int(protective)),
+            (order_id, order_id, kind, int(protective)),
         )
 
 
@@ -123,14 +130,18 @@ def test_t29_2_cooldown_allows_exits_and_does_not_write_kill_switch(tmp_path: Pa
     observe_nlv(tmp_path, "2026-11-02", 1000.0, NOW, hwm=1000.0)
     _insert(tmp_path, "open-1", protective=False)
     _insert(tmp_path, "stop-1", protective=True)
+    _insert(tmp_path, "exit-1", protective=False, intent_type="EXIT")
+    _insert(tmp_path, "reduce-1", protective=False, intent_type="REDUCE")
     observe_nlv(tmp_path, "2026-11-02", 899.0, NOW)
     assert not (tmp_path / "KILL_SWITCH").exists()
     runtime = json.loads((tmp_path / "state" / "strategy_runtime.json").read_text(encoding="utf-8"))
-    assert runtime["status"] == "halted"
+    assert runtime["status"] == "exit_only"
     with sqlite3.connect(tmp_path / "data" / "trading.db") as conn:
         rows = {row[0]: row[1] for row in conn.execute("SELECT order_id, state FROM orders")}
     assert rows["open-1"] == "CANCEL_REQUESTED"
     assert rows["stop-1"] == "SUBMITTED"
+    assert rows["exit-1"] == "SUBMITTED"
+    assert rows["reduce-1"] == "SUBMITTED"
     view = cycle_view(tmp_path)
     assert view is not None and view["state"] == "HALTED_COOLDOWN"
     ctx = _ctx(tmp_path, nlv=1000.0, cash=1000.0, hwm=1000.0, day_start_nlv=1000.0)

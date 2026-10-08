@@ -7,6 +7,7 @@ does not open a socket. Ports are the paper pair only.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,7 @@ from auto_trading.broker import (
     OrderIntent,
     OrderState,
 )
-from auto_trading.config import Settings
+from auto_trading.config import DEFAULT_TRADING_HOME, Settings
 from auto_trading.execution.contracts import map_contract
 from auto_trading.execution.r0 import AccountGuard, latch_kill_switch
 from auto_trading.execution.stops import cancel_keeps_protective
@@ -41,11 +42,10 @@ class IbkrBroker:
         trading_home: Path | None = None,
     ) -> None:
         self.client = client
-        self.trading_home = trading_home
+        self.trading_home = _latch_home(trading_home)
 
         def _trip(code: str) -> None:
-            if trading_home is not None:
-                latch_kill_switch(trading_home, code)
+            latch_kill_switch(self.trading_home, code)
             disconnect = getattr(client, "disconnect", None)
             if callable(disconnect):
                 disconnect()
@@ -136,6 +136,16 @@ class IbkrBroker:
     def _require_client(self) -> None:
         if self.client is None:
             raise ConnectionError("paper gateway is not connected")
+
+
+def _latch_home(trading_home: Path | None) -> Path:
+    """Where an R0 violation writes the kill switch, even when no home was passed."""
+    if trading_home is not None:
+        return trading_home
+    chosen = os.environ.get("TRADING_HOME", "").strip()
+    if chosen:
+        return Path(chosen)
+    return DEFAULT_TRADING_HOME
 
 
 def _quote_block(intent: OrderIntent) -> str | None:

@@ -1,0 +1,18 @@
+[Unit]
+Description=Paper order service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/trading
+Environment=TRADING_HOME=/srv/trading
+Environment=IBKR_PAPER_ACCOUNT=DUR243736
+Environment=IB_HOST=127.0.0.1
+Environment=IB_PORT=4002
+Environment=IB_CLIENT_ID=11
+ExecStart=/srv/trading/.venv/bin/python -m auto_trading.execution oms
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

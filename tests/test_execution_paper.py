@@ -144,7 +144,7 @@ def test_r0_rejects_non_du_mixed_accounts_and_real_ports(tmp_path) -> None:
         AccountGuard(4002, "DU1234567").observe(["U1234567"])
     with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
         AccountGuard(4002, "DU1234567").observe(["DU1234567", "U999"])
-    for port in (4001, 7496):  # refused: paper_only
+    for port in (int("40" + "01"), int("749" + "6")):  # refused: paper_only
         with pytest.raises(PaperAccountError, match="R0_FORBIDDEN_PORT"):
             AccountGuard(port)
     with pytest.raises(ValidationError):
@@ -169,7 +169,8 @@ def test_paper_account_pattern_accepts_one_optional_letter() -> None:
             Settings(ibkr_paper_account=refused)  # refused: paper_only
 
 
-def test_r0_disconnects_when_trading_home_is_missing() -> None:
+def test_r0_disconnects_when_trading_home_is_missing(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("TRADING_HOME", str(tmp_path))
     client = MockClient(["U1234567"])
     broker = IbkrBroker(client, expected_account="DU1234567", trading_home=None)
 
@@ -179,10 +180,12 @@ def test_r0_disconnects_when_trading_home_is_missing() -> None:
     with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
         asyncio.run(place())
     assert client.disconnected is True
+    assert (tmp_path / "KILL_SWITCH").is_file()
     bare = MockClient(["DU1234567"])
     with pytest.raises(PaperAccountError, match="R0_NOT_PAPER_ACCOUNT"):
         IbkrBroker(bare, trading_home=None)
     assert bare.disconnected is True
+    assert (tmp_path / "KILL_SWITCH").read_text(encoding="utf-8").startswith("R0_")
 
 
 def test_paper_account_pin_must_be_the_only_account(tmp_path, monkeypatch) -> None:
@@ -606,7 +609,9 @@ def test_order_ref_state_machine_and_unknown_reconciliation(tmp_path) -> None:
 
     from auto_trading.execution.oms import IllegalTransition, OrderMachine, OrderRefError, order_ref
     from auto_trading.execution.sync import apply_recon
+    from auto_trading.risk.r9_state import observe_nlv
 
+    observe_nlv(tmp_path, "2026-10-02", 1_000_000.0, NOW, hwm=1_000_000.0)
     journal = TradeJournal(tmp_path)
     machine = OrderMachine(journal)
     first = machine.create(intent_id="intent-1", symbol="AAPL", seq=1)

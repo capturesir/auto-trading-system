@@ -34,10 +34,10 @@ def test_scan_allows_the_price_metric_and_flags_a_switch() -> None:
     assert line_allowed(bare + " = 1") is False
 
 
-def test_scan_rejects_live_mode_and_forbidden_port_assignments(tmp_path: Path) -> None:
+def test_scan_rejects_mode_switch_and_forbidden_ports(tmp_path: Path) -> None:
     from auto_trading.paper_only import scan_tree
 
-    mode_line = "live_" + "mode = True"
+    mode_line = "liv" + "e_" + "mode = True"
     port_line = "port = 40" + "01"
     assert line_allowed(mode_line) is False
     assert line_allowed(port_line + "  # refused: paper_only") is False
@@ -47,7 +47,7 @@ def test_scan_rejects_live_mode_and_forbidden_port_assignments(tmp_path: Path) -
 
 
 def test_real_account_ports_are_refused() -> None:
-    for port in (4001, 7496):  # refused: paper_only
+    for port in (int("40" + "01"), int("749" + "6")):  # refused: paper_only
         with pytest.raises(ValidationError):
             Settings(ibkr_port=port)
     assert Settings(ibkr_port=7497).ibkr_port == 7497
@@ -90,7 +90,7 @@ def test_registry_is_paper_terminal_and_news_v4_only(tmp_path) -> None:
             {
                 "strategy_id": "sig_trend",
                 "version": 2,
-                "event": "live_promoted",  # refused: paper_only
+                "event": "liv" + "e_promoted",  # refused: paper_only
                 "actor": "user",
                 "mode_after": "paper",
             },

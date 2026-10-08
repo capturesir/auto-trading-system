@@ -92,9 +92,9 @@ def approve(
     decided = _decided_path(trading_home, order_id)
     if decided.is_file():
         existing = json.loads(decided.read_text(encoding="utf-8"))
-        from auto_trading.execution.approval_mode import APPROVER_AUTO
+        from auto_trading.execution.approval_mode import is_auto_approver
 
-        if existing.get("approver") == APPROVER_AUTO:
+        if is_auto_approver(existing.get("approver")):
             raise ApprovalError("already approved automatically")
         raise ApprovalError("already decided")
     source = trading_home / "approvals" / "pending" / f"{order_id}.json"

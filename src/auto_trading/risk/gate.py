@@ -7,6 +7,7 @@ rules. R23 records a streak and does not change the mode.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -189,7 +190,7 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         return file_code
     if _killed(ctx):
         return "R18"
-    if not ctx.connected or not ctx.recon_ok:
+    if not ctx.connected or _recon_blocked(ctx):
         return "R17"
     if ctx.paused and intent.intent_type in OPENING:
         return "R18"
@@ -506,6 +507,22 @@ def _entry_pause(ctx: GateContext) -> str | None:
     if r30:
         return "NOTIFY_FAILURE_PAUSE"
     return None
+
+
+def _recon_blocked(ctx: GateContext) -> bool:
+    """A quantity break freezes the book. A missing file leaves the caller's flag."""
+    if not ctx.recon_ok:
+        return True
+    if ctx.trading_home is None:
+        return False
+    path = ctx.trading_home / "state" / "recon.json"
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return True
+    return bool(isinstance(payload, dict) and payload.get("freeze"))
 
 
 def _killed(ctx: GateContext) -> bool:

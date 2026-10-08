@@ -16,6 +16,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from auto_trading.paper_account import DU_ACCOUNT
+from auto_trading.paper_only import account_accepted, port_accepted
 from auto_trading.portfolio.journal import TradeJournal
 
 PAPER_PORTS = (4002, 7497)
@@ -58,7 +59,7 @@ class AccountGuard:
             self._trip("R0_NOT_PAPER_ACCOUNT")
 
     def check_port(self) -> None:
-        if self.port not in PAPER_PORTS:
+        if not port_accepted(self.port):
             self._trip("R0_FORBIDDEN_PORT")
 
     def observe(self, accounts: list[str]) -> None:
@@ -85,7 +86,12 @@ class AccountGuard:
 
     def _require_pin(self, accounts: list[str]) -> None:
         """A set pin must be the only managed account. Anything else latches."""
-        if self.expected_account and frozenset(accounts) != {self.expected_account}:
+        pin = self.expected_account
+        if (
+            not pin
+            or frozenset(accounts) != {pin}
+            or any(not account_accepted(item, pin) for item in accounts)
+        ):
             self._trip("R0_ACCOUNTS_CHANGED")
 
     def _trip(self, code: str) -> None:
