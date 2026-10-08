@@ -40,6 +40,7 @@ _KINDS = frozenset(
         "approved_hash_mismatch",
         "confirmed_pin_unreadable",
         "gateway_restart_failed",
+        "reducing_order_blocked",
     }
 )
 

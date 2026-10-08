@@ -9,6 +9,7 @@ ReadOnlyApi is yes.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -80,6 +81,30 @@ _TERMINAL_STATES = frozenset(
     }
 )
 _OPENING = frozenset({"ENTRY", "ADD"})
+# Permanent opening rejects. Every other gate code stays pending and is retried.
+# R1 order notional, R2 order cap, R3 position, R4 market, R5 currency, R6 gross.
+# LOT_TOO_LARGE is one lot above the unscaled order cap.
+# R7 cash cover and R9_HALF_SIZE_LIMIT can clear later, so they are not listed.
+# Missing or unparseable valid_from is stored as INTENT_EXPIRED before the gate.
+# An exit, reduce, or protective stop is never terminal because of a gate code.
+_PERMANENT_REJECTS = frozenset(
+    {
+        "INTENT_EXPIRED",
+        "LIVE_NOT_AUTHORIZED",
+        "LOT_TOO_LARGE",
+        "R0_ACCOUNTS_CHANGED",
+        "R0_FORBIDDEN_PORT",
+        "R0_NOT_PAPER_ACCOUNT",
+        "R1",
+        "R2",
+        "R3",
+        "R4",
+        "R5",
+        "R6",
+        "R25",
+    }
+)
+_REDUCING_BLOCK_ALERT_AFTER = 3
 _intent_paths: dict[int, Path] = {}
 
 
@@ -1385,6 +1410,47 @@ def _close_intent(
         retired.add(source)
 
 
+def _reducing_blocked_alert(home: Path, intent: OrderIntent, reason: str, now: datetime) -> None:
+    """One critical alert after the same exit or stop is blocked three times."""
+    from auto_trading.alerts.critical import write_critical_event
+
+    key = intent.intent_id or intent.client_id
+    folder = home / "state" / "reducing_blocks"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    path = folder / f"{name}.txt"
+    count = 0
+    if path.is_file():
+        try:
+            count = int(path.read_text(encoding="utf-8").strip() or "0")
+        except ValueError:
+            count = 0
+    count += 1
+    path.write_text(f"{count}\n", encoding="utf-8")
+    if count < _REDUCING_BLOCK_ALERT_AFTER:
+        return
+    marker = home / "state" / "reducing_block_alert.txt"
+    seen: set[str] = set()
+    if marker.is_file():
+        text = marker.read_text(encoding="utf-8")
+        seen = {line.strip() for line in text.splitlines() if line.strip()}
+    if key in seen:
+        return
+    write_critical_event(
+        home,
+        kind="reducing_order_blocked",
+        reason_code=reason,
+        rule_id=reason,
+        now=now,
+        account=_pin(),
+        event_id=key,
+        message_zh="出場或保護性停損連續被風控閘門擋住，仍會重試，不會移出佇列。",
+        resume_hint="條件恢復後下一輪會再送。",
+        detail={"code": reason, "attempts": count},
+    )
+    marker.write_text("\n".join(sorted(seen | {key})) + "\n", encoding="utf-8")
+
+
 def _queue_destinations(home: Path, retired: set[Path], kept: set[Path]) -> None:
     dest_dir = home / "intents" / "done"
     for path in retired - kept:
@@ -1410,8 +1476,10 @@ def submit_once(
     """Engine intents, the full risk gate, approval, the journal, then the broker.
 
     While ReadOnlyApi is yes the function returns before any of that work.
-    The same ``intent_id`` is not sent twice. ``mode`` other than paper, and
-    any size multiplier, never reach the broker.
+    The same ``intent_id`` is not sent twice. A transient gate rejection stays
+    in the queue and is tried again later. Only ``_PERMANENT_REJECTS`` retires
+    an opening. An exit or protective stop is not retired by a gate rejection.
+    ``mode`` other than paper, and any size multiplier, never reach the broker.
     """
     from auto_trading.execution.approvals import queue_order
     from auto_trading.risk.gate import evaluate
@@ -1505,6 +1573,17 @@ def submit_once(
         blocked = intent.mode != "paper" or intent.live_size_multiplier is not None
         if code or blocked:
             reason = code or "LIVE_NOT_AUTHORIZED"
+            reducing = intent.intent_type in {"REDUCE", "EXIT"} or intent.reduce_only
+            reducing = reducing or intent.protective
+            if reducing or reason not in _PERMANENT_REJECTS:
+                _record_once(journal, symbol=intent.symbol, code=reason, intent_id=key, now=now)
+                if source is not None:
+                    kept.add(source)
+                if reducing:
+                    _reducing_blocked_alert(home, intent, reason, now)
+                rejected.append(reason)
+                skipped += 1
+                continue
             _close_intent(
                 journal,
                 intent,

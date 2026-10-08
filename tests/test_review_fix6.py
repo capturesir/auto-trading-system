@@ -1,4 +1,4 @@
-"""Section 9 leftovers: tick multiples, terminal intents, and quote receipt time."""
+"""Tick multiples, quote receipt time, and which gate rejects stay queued."""
 
 from __future__ import annotations
 
@@ -19,7 +19,12 @@ from auto_trading.config import get_settings
 from auto_trading.execution.ibkr import PaperGateway
 from auto_trading.execution.pricing import quantize_to_tick
 from auto_trading.execution.risk_state import build_risk_limits, write_risk_limits
-from auto_trading.execution.services import account_once, submit_once
+from auto_trading.execution.services import (
+    _PERMANENT_REJECTS,
+    _REDUCING_BLOCK_ALERT_AFTER,
+    account_once,
+    submit_once,
+)
 from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES
 from auto_trading.market.quotes import write_quotes
 from auto_trading.market.ticks import tick_size
@@ -61,23 +66,56 @@ def test_quantize_to_tick_rounds_to_the_band_multiple() -> None:
     _on_tick("KR", quantize_to_tick("KR", 2000.4, buy=False))
 
 
-def _ready(home: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _ready(
+    home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    at: datetime | None = None,
+    positions: list[dict[str, object]] | None = None,
+) -> None:
     monkeypatch.setenv("IBKR_PAPER_ACCOUNT", PIN)
-    write_risk_limits(home, build_risk_limits(now=NOW, nlv=1_000_000, account=PIN))
+    moment = at or NOW
+    write_risk_limits(home, build_risk_limits(now=moment, nlv=1_000_000, account=PIN))
     account_once(
         home,
-        NOW,
+        moment,
         snapshot={
             "accounts": [PIN],
             "nlv": 1_000_000.0,
-            "positions": [],
+            "positions": positions or [],
             "open_orders": [],
         },
     )
-    shutil.copytree(ROOT / "strategies", home / "strategies")
+    if not (home / "strategies").exists():
+        shutil.copytree(ROOT / "strategies", home / "strategies")
 
 
-def _write_opening(home: Path, name: str, *, valid_from: str | None) -> None:
+def _quote(home: Path, when: datetime, symbol: str, *, last: float, age: timedelta) -> None:
+    received = when - age
+    write_quotes(
+        home,
+        when,
+        [
+            {
+                "symbol": symbol,
+                "last": last,
+                "as_of": (received - timedelta(minutes=15)).isoformat(),
+                "received_at": received.isoformat(),
+                "source": "ibkr",
+                "data_type": "delayed",
+                "market_data_type": 3,
+            }
+        ],
+    )
+
+
+def _write_opening(
+    home: Path,
+    name: str,
+    *,
+    valid_from: str | None,
+    qty: int = 10,
+) -> None:
     row: dict[str, object] = {
         "intent_id": name,
         "intent_type": "ENTRY",
@@ -85,12 +123,16 @@ def _write_opening(home: Path, name: str, *, valid_from: str | None) -> None:
         "market": "US",
         "currency": "USD",
         "side": "BUY",
-        "qty": 10,
+        "qty": qty,
         "limit_price": 100,
         "strategy_id": "ta_breakout52",
     }
     if valid_from is not None:
         row["valid_from"] = valid_from
+    _write_row(home, name, row)
+
+
+def _write_row(home: Path, name: str, row: dict[str, object]) -> None:
     envelope = {
         "schema_version": "intent/1.0",
         "strategy_id": "ta_breakout52",
@@ -104,38 +146,224 @@ def _write_opening(home: Path, name: str, *, valid_from: str | None) -> None:
     (folder / f"{name}.json").write_text(json.dumps(envelope), encoding="utf-8")
 
 
+def _hk_row(name: str, **over: object) -> dict[str, object]:
+    row: dict[str, object] = {
+        "intent_id": name,
+        "intent_type": "ENTRY",
+        "ticker": "0700.HK",
+        "market": "HK",
+        "currency": "HKD",
+        "side": "BUY",
+        "qty": 100,
+        "lot_size": 100,
+        "limit_price": 400,
+        "valid_from": "2026-10-13T09:30:00+08:00",
+        "strategy_id": "ta_breakout52",
+    }
+    row.update(over)
+    return row
+
+
+def _blocked_alerts(home: Path) -> int:
+    count = 0
+    for path in (home / "logs").glob("critical_*.jsonl"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if '"kind": "reducing_order_blocked"' in line:
+                count += 1
+    return count
+
+
 def _restore(home: Path, name: str) -> None:
     done = home / "intents" / "done" / f"{name}.json"
     (home / "intents" / f"{name}.json").write_bytes(done.read_bytes())
 
 
-def test_gate_reject_is_terminal_and_never_reaches_the_broker(
+def test_permanent_reject_codes_are_an_explicit_allowlist() -> None:
+    assert (
+        frozenset(
+            {
+                "INTENT_EXPIRED",
+                "LIVE_NOT_AUTHORIZED",
+                "LOT_TOO_LARGE",
+                "R0_ACCOUNTS_CHANGED",
+                "R0_FORBIDDEN_PORT",
+                "R0_NOT_PAPER_ACCOUNT",
+                "R1",
+                "R2",
+                "R3",
+                "R4",
+                "R5",
+                "R6",
+                "R25",
+            }
+        )
+        == _PERMANENT_REJECTS
+    )
+    assert "R7" not in _PERMANENT_REJECTS
+    assert "R9_HALF_SIZE_LIMIT" not in _PERMANENT_REJECTS
+    assert "R10" not in _PERMANENT_REJECTS
+    assert "R22" not in _PERMANENT_REJECTS
+    assert "R17" not in _PERMANENT_REJECTS
+    assert "ENTRIES_PAUSED" not in _PERMANENT_REJECTS
+
+
+def test_r10_entry_stays_pending_and_is_sent_after_the_open_buffer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    early = datetime(2026, 10, 13, 9, 30, 10, tzinfo=ZoneInfo("Asia/Macau"))
+    later = datetime(2026, 10, 13, 9, 40, tzinfo=ZoneInfo("Asia/Macau"))
+    _ready(tmp_path, monkeypatch, at=early)
+    _quote(tmp_path, early, "0700.HK", last=400.0, age=timedelta(seconds=1))
+    _write_row(tmp_path, "s1_open_at_0930", _hk_row("s1_open_at_0930"))
+    sent: list[OrderIntent] = []
+    first = submit_once(tmp_path, early, place=sent.append, readonly=False)
+    assert sent == []
+    assert first["rejected"] == ["R10"]
+    assert (tmp_path / "intents" / "s1_open_at_0930.json").is_file()
+    assert TradeJournal(tmp_path).latest_order_state("s1_open_at_0930") is None
+    account_once(
+        tmp_path,
+        later,
+        snapshot={"accounts": [PIN], "nlv": 1_000_000.0, "positions": [], "open_orders": []},
+    )
+    _quote(tmp_path, later, "0700.HK", last=400.0, age=timedelta(seconds=1))
+    second = submit_once(tmp_path, later, place=sent.append, readonly=False)
+    assert second["sent"] == 1
+    assert [item.intent_id for item in sent] == ["s1_open_at_0930"]
+    sent.clear()
+    third = submit_once(tmp_path, later, place=sent.append, readonly=False)
+    assert sent == []
+    assert third["sent"] == 0
+
+
+def test_r22_exit_stays_pending_and_is_resent_after_the_quote_recovers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moment = datetime(2026, 10, 13, 10, 5, tzinfo=ZoneInfo("Asia/Macau"))
+    held = [{"symbol": "0700.HK", "qty": 100, "strategy_id": "ta_breakout52"}]
+    _ready(tmp_path, monkeypatch, at=moment, positions=held)
+    _quote(tmp_path, moment, "0700.HK", last=400.0, age=timedelta(seconds=11))
+    _write_row(
+        tmp_path,
+        "s2_exit_stale_quote",
+        _hk_row(
+            "s2_exit_stale_quote",
+            intent_type="EXIT",
+            side="SELL",
+            parent_intent_id="entry-1",
+        ),
+    )
+    sent: list[OrderIntent] = []
+    first = submit_once(tmp_path, moment, place=sent.append, readonly=False)
+    assert sent == []
+    assert first["rejected"] == ["R22"]
+    assert (tmp_path / "intents" / "s2_exit_stale_quote.json").is_file()
+    assert _blocked_alerts(tmp_path) == 0
+    for _ in range(_REDUCING_BLOCK_ALERT_AFTER - 1):
+        submit_once(tmp_path, moment, place=sent.append, readonly=False)
+    assert sent == []
+    assert (tmp_path / "intents" / "s2_exit_stale_quote.json").is_file()
+    assert _blocked_alerts(tmp_path) == 1
+    submit_once(tmp_path, moment, place=sent.append, readonly=False)
+    assert _blocked_alerts(tmp_path) == 1
+    recovered = moment + timedelta(minutes=1)
+    account_once(
+        tmp_path,
+        recovered,
+        snapshot={"accounts": [PIN], "nlv": 1_000_000.0, "positions": held, "open_orders": []},
+    )
+    _quote(tmp_path, recovered, "0700.HK", last=400.0, age=timedelta(seconds=1))
+    second = submit_once(tmp_path, recovered, place=sent.append, readonly=False)
+    assert second["sent"] == 1
+    assert [item.intent_id for item in sent] == ["s2_exit_stale_quote"]
+    sent.clear()
+    again = submit_once(tmp_path, recovered, place=sent.append, readonly=False)
+    assert sent == []
+    assert again["sent"] == 0
+
+
+def test_entries_paused_opening_is_resent_after_unpause(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moment = datetime(2026, 10, 13, 10, 10, tzinfo=ZoneInfo("Asia/Macau"))
+    _ready(tmp_path, monkeypatch, at=moment)
+    _quote(tmp_path, moment, "0700.HK", last=400.0, age=timedelta(seconds=1))
+    (tmp_path / "state" / "entry_pause.json").write_text(
+        json.dumps({"watchdog": True}),
+        encoding="utf-8",
+    )
+    _write_row(tmp_path, "s3_open_during_pause", _hk_row("s3_open_during_pause"))
+    sent: list[OrderIntent] = []
+    first = submit_once(tmp_path, moment, place=sent.append, readonly=False)
+    assert sent == []
+    assert first["rejected"] == ["ENTRIES_PAUSED"]
+    assert (tmp_path / "intents" / "s3_open_during_pause.json").is_file()
+    assert TradeJournal(tmp_path).latest_order_state("s3_open_during_pause") is None
+    (tmp_path / "state" / "entry_pause.json").write_text(
+        json.dumps({"watchdog": False}),
+        encoding="utf-8",
+    )
+    later = moment + timedelta(minutes=1)
+    account_once(
+        tmp_path,
+        later,
+        snapshot={"accounts": [PIN], "nlv": 1_000_000.0, "positions": [], "open_orders": []},
+    )
+    _quote(tmp_path, later, "0700.HK", last=400.0, age=timedelta(seconds=1))
+    second = submit_once(tmp_path, later, place=sent.append, readonly=False)
+    assert second["sent"] == 1
+    assert [item.intent_id for item in sent] == ["s3_open_during_pause"]
+
+
+def test_r17_protective_stop_is_resent_after_the_account_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moment = datetime(2026, 10, 13, 10, 15, tzinfo=ZoneInfo("Asia/Macau"))
+    held = [{"symbol": "0700.HK", "qty": 100, "strategy_id": "ta_breakout52"}]
+    _ready(tmp_path, monkeypatch, at=moment - timedelta(seconds=120), positions=held)
+    _quote(tmp_path, moment, "0700.HK", last=400.0, age=timedelta(seconds=1))
+    _write_row(
+        tmp_path,
+        "s4_stop_stale_account",
+        _hk_row(
+            "s4_stop_stale_account",
+            intent_type="EXIT",
+            side="SELL",
+            protective=True,
+            parent_intent_id="entry-1",
+        ),
+    )
+    sent: list[OrderIntent] = []
+    first = submit_once(tmp_path, moment, place=sent.append, readonly=False)
+    assert sent == []
+    assert first["rejected"] == ["R17"]
+    assert (tmp_path / "intents" / "s4_stop_stale_account.json").is_file()
+    assert TradeJournal(tmp_path).latest_order_state("s4_stop_stale_account") is None
+    later = moment + timedelta(minutes=1)
+    account_once(
+        tmp_path,
+        later,
+        snapshot={"accounts": [PIN], "nlv": 1_000_000.0, "positions": held, "open_orders": []},
+    )
+    second = submit_once(tmp_path, later, place=sent.append, readonly=False)
+    assert second["sent"] == 1
+    assert [item.intent_id for item in sent] == ["s4_stop_stale_account"]
+    assert sent[0].protective is True
+
+
+def test_permanent_size_reject_is_never_retried_and_never_reaches_the_broker(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _ready(tmp_path, monkeypatch)
-    write_quotes(
-        tmp_path,
-        NOW,
-        [
-            {
-                "symbol": "AAPL",
-                "last": 100.0,
-                "as_of": (NOW - timedelta(minutes=15)).isoformat(),
-                "received_at": (NOW - timedelta(seconds=11)).isoformat(),
-                "source": "ibkr",
-                "data_type": "delayed",
-                "market_data_type": 3,
-            }
-        ],
-    )
-    _write_opening(tmp_path, "gate", valid_from="2026-10-02T21:30:00+08:00")
+    _quote(tmp_path, NOW, "AAPL", last=100.0, age=timedelta(seconds=1))
+    _write_opening(tmp_path, "too-big", valid_from="2026-10-02T21:30:00+08:00", qty=600)
     sent: list[OrderIntent] = []
     first = submit_once(tmp_path, NOW, place=sent.append, readonly=False)
     assert sent == []
-    assert "R22" in first["rejected"]
-    assert not (tmp_path / "intents" / "gate.json").exists()
-    assert TradeJournal(tmp_path).latest_order_state("gate") == "RISK_REJECTED"
-    _restore(tmp_path, "gate")
+    assert first["rejected"] == ["R1"]
+    assert not (tmp_path / "intents" / "too-big.json").exists()
+    assert TradeJournal(tmp_path).latest_order_state("too-big") == "RISK_REJECTED"
+    _restore(tmp_path, "too-big")
     again = submit_once(tmp_path, NOW, place=sent.append, readonly=False)
     assert sent == []
     assert again["rejected"] == []
