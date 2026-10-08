@@ -1026,8 +1026,10 @@ class TradeJournal:
 
             parsed = json.loads(raw)
             detail, ok = pool_status(self.home, parsed, str(intent_payload.get("ticker") or ""))
+            archive = self.home / "data" / "universe" / "archive" / f"{parsed['pool_id']}.csv"
             traced["signal_id"] = None
             traced["template_rationale"] = fixed_rationale(parsed)
+            traced["pool_archive"] = str(archive) if archive.is_file() else None
             traced["pool_hash_check"] = detail
             traced["pool_hash_ok"] = ok
         return traced

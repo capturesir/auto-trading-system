@@ -1,7 +1,8 @@
 """Market-strategy intent fields: trigger_ref and protective_stop_pct.
 
-``trigger_ref`` is stored as the exact JSON text from the intent. A missing
-universe archive skips the pool hash check and logs a warning.
+``trigger_ref`` is stored as the exact JSON text from the intent. The archive
+named by ``pool_id`` must exist. Its sha256, including the ``sha256:`` prefix,
+must equal ``pool_hash`` exactly.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ log = logging.getLogger(__name__)
 MAX_TRIGGER_BYTES = 4096
 POOL_ID = re.compile(r"^ta_pool_[0-9]{6}$")
 DAY = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+POOL_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
 TRIGGER_FIELDS = (
     "pool_id",
     "pool_hash",
@@ -42,6 +44,7 @@ class IntentCheck:
     trigger_type: str | None
     protective_stop_pct: float | None
     rationale: str | None = None
+    detail: str | None = None
 
 
 def raw_field(text: str, field: str) -> str | None:
@@ -92,22 +95,19 @@ def fixed_rationale(trigger_ref: dict[str, Any]) -> str:
     return f"收市 {close} 創 {period} 日新高（前高 {prior}）；股票池 {pool}"
 
 
-def pool_status(home: Path, trigger_ref: dict[str, Any], ticker: str) -> tuple[str, bool | None]:
-    """Return ``(detail, ok)``. A missing archive is ``skipped`` and not a failure."""
-    universe = home / "data" / "universe"
+def pool_status(home: Path, trigger_ref: dict[str, Any], ticker: str) -> tuple[str, bool]:
+    """Return ``(detail, ok)``. A missing archive is a failure."""
     pool_id = str(trigger_ref["pool_id"])
-    archive = universe / "archive" / f"{pool_id}.csv"
-    if not universe.is_dir() or not archive.is_file():
-        log.warning("pool archive missing; pool_hash check skipped for %s", pool_id)
-        return "skipped", None
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    archive = home / "data" / "universe" / "archive" / f"{pool_id}.csv"
+    if not archive.is_file():
+        log.error("archive_missing %s", pool_id)
+        return "archive_missing", False
+    digest = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
     claimed = str(trigger_ref["pool_hash"])
-    if claimed.startswith("sha256:"):
-        claimed = claimed.split(":", 1)[1]
-    if claimed.lower() != digest:
-        return "hash_mismatch", False
+    if POOL_HASH.fullmatch(claimed) is None or claimed != digest:
+        return "pool_hash_mismatch", False
     if not _ticker_in_csv(archive, ticker):
-        return "ticker_missing", False
+        return "ticker_not_in_pool", False
     return "matched", True
 
 
@@ -131,9 +131,9 @@ def validate_intent(
     if raw is not None and len(raw.encode("utf-8")) > MAX_TRIGGER_BYTES:
         return IntentCheck("INTENT_INVALID_FIELD", raw, kind, stop)
     if kind == "market":
-        code = _market_fields(payload, raw, now, home, payload.get("ticker"))
+        code, detail = _market_fields(payload, raw, now, home, payload.get("ticker"))
         if code:
-            return IntentCheck(code, raw, kind, stop)
+            return IntentCheck(code, raw, kind, stop, detail=detail)
     else:
         if raw not in (None, "null"):
             return IntentCheck("INTENT_INVALID_FIELD", raw, kind, stop)
@@ -154,27 +154,27 @@ def _market_fields(
     now: datetime,
     home: Path | None,
     ticker: object,
-) -> str | None:
+) -> tuple[str | None, str | None]:
     for name in NULL_ON_MARKET:
         if payload.get(name) is not None:
-            return "INTENT_INVALID_FIELD"
+            return "INTENT_INVALID_FIELD", None
     if raw is None or raw == "null":
-        return "TRIGGER_REF_MISSING"
+        return "TRIGGER_REF_MISSING", None
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
-        return "TRIGGER_REF_INVALID"
+        return "TRIGGER_REF_INVALID", None
     if not isinstance(parsed, dict) or not _trigger_shape(parsed):
-        return "TRIGGER_REF_INVALID"
+        return "TRIGGER_REF_INVALID", None
     decision = now.date()
     asof = date.fromisoformat(str(parsed["pool_asof"]))
     if asof < decision - timedelta(days=40):
-        return "TRIGGER_REF_INVALID"
+        return "TRIGGER_REF_INVALID", "pool_stale"
     if home is not None:
-        _detail, ok = pool_status(home, parsed, str(ticker or ""))
+        detail, ok = pool_status(home, parsed, str(ticker or ""))
         if ok is False:
-            return "TRIGGER_REF_INVALID"
-    return None
+            return "TRIGGER_REF_INVALID", detail
+    return None, None
 
 
 def _trigger_shape(payload: dict[str, Any]) -> bool:

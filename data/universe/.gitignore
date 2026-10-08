@@ -1,0 +1,3 @@
+# data/universe：暫存目錄不入 repo；ta_pool.csv、ta_pool.meta.json、archive/ 要入 repo
+.staging/
+*.tmp

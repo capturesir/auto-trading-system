@@ -32,6 +32,8 @@ _KINDS = frozenset(
         "r18_stop",
         "r29_anomaly_breaker",
         "r30_notify_failure",
+        "pool_rebuild_failed",
+        "pool_stale",
     }
 )
 

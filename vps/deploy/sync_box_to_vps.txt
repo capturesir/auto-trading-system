@@ -7,6 +7,4 @@ strategies/registry.jsonl
 approvals/decided/
 config/adr_map.csv
 config/adr_premium_rule_expected.json
-data/universe/ta_pool.meta.json
-data/universe/archive/
 state/adr_premium_state.json

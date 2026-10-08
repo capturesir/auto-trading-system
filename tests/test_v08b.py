@@ -119,7 +119,8 @@ def _buy(**kwargs: object) -> OrderIntent:
 
 
 def test_t17_trigger_ref_round_trip_is_byte_identical(tmp_path: Path) -> None:
-    ref = _ref("abc123")
+    digest = "sha256:" + _archive(tmp_path, "ticker,market\nNVDA,US\n")
+    ref = _ref(digest)
     text = _intent(ref)
     when = datetime(2026, 10, 8, tzinfo=UTC)
     check = persist_intent(tmp_path, text, MARKET, now=when)
@@ -151,18 +152,20 @@ def test_t17_non_market_trigger_ref_is_intent_invalid_field() -> None:
 
 def test_t18_market_entry_passes_and_the_failure_codes(tmp_path: Path) -> None:
     when = datetime(2026, 10, 8, tzinfo=UTC)
-    digest = _archive(tmp_path, "ticker,market\nNVDA,US\n")
+    digest = "sha256:" + _archive(tmp_path, "ticker,market\nNVDA,US\n")
     ok = validate_intent(_intent(_ref(digest)), MARKET, now=when, home=tmp_path)
     assert ok.code is None
     missing = validate_intent(_intent(None), MARKET, now=when, home=tmp_path)
     assert missing.code == "TRIGGER_REF_MISSING"
     bad_hash = validate_intent(_intent(_ref("0" * 64)), MARKET, now=when, home=tmp_path)
     assert bad_hash.code == "TRIGGER_REF_INVALID"
+    assert bad_hash.detail == "pool_hash_mismatch"
     archive = tmp_path / "data" / "universe" / "archive" / "ta_pool_202610.csv"
     archive.write_text("ticker,market\nAAPL,US\n", encoding="utf-8")
-    other = hashlib.sha256(archive.read_bytes()).hexdigest()
+    other = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
     absent = validate_intent(_intent(_ref(other)), MARKET, now=when, home=tmp_path)
     assert absent.code == "TRIGGER_REF_INVALID"
+    assert absent.detail == "ticker_not_in_pool"
     stale = validate_intent(
         _intent(_ref(digest, asof="2026-01-01")),
         MARKET,
@@ -170,6 +173,7 @@ def test_t18_market_entry_passes_and_the_failure_codes(tmp_path: Path) -> None:
         home=tmp_path,
     )
     assert stale.code == "TRIGGER_REF_INVALID"
+    assert stale.detail == "pool_stale"
     confidence = validate_intent(
         _intent(_ref(digest), confidence=70),
         MARKET,
@@ -431,7 +435,7 @@ def test_t22_account_totals_halt_both_strategies_and_summary_splits_rows(tmp_pat
 
 
 def test_t23_why_uses_the_fixed_template_and_keeps_rationale(tmp_path: Path) -> None:
-    digest = _archive(tmp_path, "ticker,market\nNVDA,US\n")
+    digest = "sha256:" + _archive(tmp_path, "ticker,market\nNVDA,US\n")
     text = _intent(_ref(digest))
     when = datetime(2026, 10, 8, tzinfo=UTC)
     assert persist_intent(tmp_path, text, MARKET, now=when).code is None
@@ -507,23 +511,25 @@ def sqlite_pnl(path: Path) -> list[dict[str, float | str]]:
     return TradeJournal(home).strategy_pnl()
 
 
-def test_t25_sync_list_and_missing_universe_skips_the_pool_hash(
+def test_t25_sync_list_and_missing_archive_is_refused(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     box = Path("vps/deploy/sync_box_to_vps.txt").read_text(encoding="utf-8")
-    assert "data/universe/ta_pool.meta.json" in box
-    assert "data/universe/archive/" in box
+    assert "data/universe" not in box
     outbound = Path("vps/deploy/sync_vps_to_box.txt").read_text(encoding="utf-8")
     assert "data/trading.db" in outbound
+    assert "data/universe/" in outbound
+    assert "--delete" not in outbound
     caplog.set_level("WARNING")
     check = validate_intent(
-        _intent(_ref("abc")),
+        _intent(_ref("sha256:" + "ab" * 32)),
         MARKET,
         now=datetime(2026, 10, 8, tzinfo=UTC),
         home=tmp_path,
     )
-    assert check.code is None
-    assert any("pool archive missing" in message for message in caplog.messages)
+    assert check.code == "TRIGGER_REF_INVALID"
+    assert check.detail == "archive_missing"
+    assert not any("pool archive missing" in message for message in caplog.messages)
 
 
 def test_t26_approved_hashes_and_a_changed_byte_is_r25(tmp_path: Path) -> None:

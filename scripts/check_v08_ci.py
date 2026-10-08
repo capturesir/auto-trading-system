@@ -61,6 +61,42 @@ def approval_literal_lines() -> list[str]:
     return hits
 
 
+def _oversized_files() -> bool:
+    limit = 5 * 1024 * 1024
+    skip = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache"}
+    too_big = False
+    for path in ROOT.rglob("*"):
+        if not path.is_file() or any(part in skip for part in path.parts):
+            continue
+        size = path.stat().st_size
+        if size > limit:
+            print(f"file exceeds 5 MB: {path.relative_to(ROOT)} ({size})", file=sys.stderr)
+            too_big = True
+    return too_big
+
+
+def _universe_forbidden_tokens() -> bool:
+    pattern = re.compile(rf"[A-Za-z0-9_]*{STEM}[A-Za-z0-9_]*", re.IGNORECASE)
+    found: set[str] = set()
+    for name in ("research/universe", "data/universe"):
+        base = ROOT / name
+        if not base.exists():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            if any(part in {"__pycache__", ".staging", "cache"} for part in path.parts):
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            found.update(pattern.findall(text))
+    if found:
+        print("universe tree has a forbidden token:", file=sys.stderr)
+        for item in sorted(found):
+            print(item, file=sys.stderr)
+        return True
+    return False
+
+
 def main() -> int:
     hits = approval_literal_lines()
     if len(hits) != 1 or "APPROVER_AUTO" not in hits[0]:
@@ -87,9 +123,16 @@ def main() -> int:
     if "data/trading.db" not in manifest:
         print("sync list missing the read-only database", file=sys.stderr)
         return 1
+    if "data/universe/" not in manifest or "--delete" in manifest:
+        print("vps sync must copy the universe and must not use --delete", file=sys.stderr)
+        return 1
     inbound = (ROOT / "vps" / "deploy" / "sync_box_to_vps.txt").read_text(encoding="utf-8")
-    if "data/universe/ta_pool.meta.json" not in inbound or "data/universe/archive/" not in inbound:
-        print("box sync list missing the universe archive", file=sys.stderr)
+    if "data/universe" in inbound:
+        print("box sync must not push the universe", file=sys.stderr)
+        return 1
+    if _oversized_files():
+        return 1
+    if _universe_forbidden_tokens():
         return 1
     allow_path = ROOT / "ci" / "r0_live_allowlist.txt"
     raw = allow_path.read_text(encoding="utf-8").splitlines()
