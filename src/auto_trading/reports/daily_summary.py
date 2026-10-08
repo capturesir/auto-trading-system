@@ -12,9 +12,10 @@ from typing import Any
 from auto_trading.execution.approval_mode import APPROVER_AUTO
 from auto_trading.execution.breakers import flags, risk_window
 from auto_trading.portfolio.journal import TradeJournal
+from auto_trading.reports.benchmarks import build_benchmarks, write_monthly_review
 
 MACAU = timezone(timedelta(hours=8))
-SCHEMA = "daily_summary/1.0"
+SCHEMA = "daily_summary/1.1"
 MARKETS = ("US", "HK", "JP", "KR", "TW")
 REQUIRED = (
     "schema_version",
@@ -40,11 +41,12 @@ REQUIRED = (
     "halts",
     "by_quote_type",
     "by_market",
+    "benchmarks",
 )
 
 
 def validate_daily_summary(payload: dict[str, Any]) -> None:
-    """Raise ValueError when a required daily_summary/1.0 field is missing."""
+    """Raise ValueError when a required daily_summary/1.1 field is missing."""
     if payload.get("schema_version") != SCHEMA:
         raise ValueError("schema")
     missing = [key for key in REQUIRED if key not in payload]
@@ -71,6 +73,14 @@ def validate_daily_summary(payload: dict[str, Any]) -> None:
     for key in (APPROVER_AUTO, "user", "reapproved", "chase_reapproval_exceeded", "expired"):
         if key not in approvals:
             raise ValueError("approvals")
+    block = payload["benchmarks"]
+    if block is None:
+        return
+    if not isinstance(block, dict):
+        raise ValueError("benchmarks")
+    for key in ("paper_start_date", "us_trade_date", "paper", "items"):
+        if key not in block:
+            raise ValueError("benchmarks")
 
 
 def _market(symbol: str) -> str:
@@ -118,6 +128,15 @@ def _markdown(payload: dict[str, Any]) -> str:
         row = payload["by_market"][market]
         lines.append(f"| {market} | {row['fills']} | {row['rejections']} |")
     lines.append("")
+    block = payload.get("benchmarks")
+    if not block:
+        lines.append("基準比較尚未開始")
+        lines.append("")
+        return "\n".join(lines) + "\n"
+    lines.append("基準比較")
+    for item in block.get("items") or []:
+        lines.append(f"- {item.get('id')} {item.get('status')} {item.get('na_reason')}")
+    lines.append("")
     return "\n".join(lines) + "\n"
 
 
@@ -128,6 +147,8 @@ def write_daily_summary(
     complete: bool,
     pin: str = "",
     r15_limit: int = 20,
+    benchmark_get: Any = None,
+    benchmark_clock: Any = None,
 ) -> dict[str, Any]:
     """Write JSON and Markdown for the risk day that contains ``now``."""
     start, end, risk_date = risk_window(now)
@@ -301,7 +322,17 @@ def write_daily_summary(
             },
         },
         "by_market": by_market,
+        "benchmarks": _benchmarks(
+            trading_home,
+            now,
+            account,
+            benchmark_get=benchmark_get,
+            benchmark_clock=benchmark_clock,
+        ),
     }
+    if local.day == 1:
+        previous = (local.date().replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
+        write_monthly_review(trading_home, previous, now=now)
     validate_daily_summary(payload)
     temporary = target.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -334,3 +365,24 @@ def write_daily_summary(
     )
     os.replace(note_tmp, note)
     return payload
+
+
+def _benchmarks(
+    trading_home: Path,
+    now: datetime,
+    account: dict[str, Any],
+    *,
+    benchmark_get: Any,
+    benchmark_clock: Any,
+) -> dict[str, Any] | None:
+    """Comparison block. A fetch failure is recorded and does not stop the summary."""
+    try:
+        return build_benchmarks(
+            trading_home,
+            now,
+            account,
+            get=benchmark_get,
+            clock=benchmark_clock,
+        )
+    except (OSError, ValueError, TypeError):
+        return None

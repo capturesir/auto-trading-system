@@ -202,6 +202,8 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         return file_r25
     if ctx.registry_mode != "paper":
         return "LIVE_NOT_AUTHORIZED"
+    if _comparison_only(intent.symbol):
+        return "R26"
     market = _market(intent)
     if market is None:
         return "R26"
@@ -267,6 +269,23 @@ def _r0(intent: OrderIntent, ctx: GateContext) -> str | None:
     if pin and intent.account and intent.account != pin:
         return "R0_ACCOUNTS_CHANGED"
     return None
+
+
+def _comparison_only(symbol: str) -> bool:
+    """BTC and ETH are report benchmarks. They are not tradable symbols."""
+    parts: list[str] = []
+    token: list[str] = []
+    for char in symbol.upper():
+        if char.isalnum():
+            token.append(char)
+        elif token:
+            parts.append("".join(token))
+            token = []
+    if token:
+        parts.append("".join(token))
+    if any(part in {"BTC", "ETH", "XBT"} for part in parts):
+        return True
+    return "".join(parts) in {"BTCUSD", "ETHUSD", "XBTUSD"}
 
 
 def _market(intent: OrderIntent) -> str | None:
