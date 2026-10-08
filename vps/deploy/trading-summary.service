@@ -4,6 +4,7 @@ Description=Daily paper summary
 
 [Service]
 Type=oneshot
+User=trader
 WorkingDirectory=/srv/trading
 Environment=TRADING_HOME=/srv/trading
 Environment=IBKR_PAPER_ACCOUNT=DUR243736

@@ -1015,6 +1015,25 @@ class TradeJournal:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def quantity_by_ticker(self) -> dict[str, float]:
+        """Net journal quantity per ticker. This is not the broker snapshot."""
+        totals: dict[str, float] = {}
+        for row in self.strategy_position_rows():
+            ticker = str(row["ticker"])
+            totals[ticker] = totals.get(ticker, 0.0) + float(row["qty"])
+        return {ticker: qty for ticker, qty in totals.items() if abs(qty) > 1e-9}
+
+    def working_orders(self) -> list[tuple[str, str]]:
+        """Orders the broker should still be working: ``(order_id, symbol)``."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT order_id, symbol FROM orders
+                WHERE state IN ('SUBMITTED', 'PARTIALLY_FILLED', 'CANCEL_REQUESTED')
+                """
+            ).fetchall()
+        return [(str(row["order_id"]), str(row["symbol"])) for row in rows]
+
     def strategy_pnl(self) -> list[dict[str, Any]]:
         """Cash by strategy. A SELL adds proceeds and a BUY subtracts cost."""
         with self._connect() as conn:

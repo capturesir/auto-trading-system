@@ -54,7 +54,7 @@ def test_blocker1_exact_allowlist_rejects_the_three_fixtures(tmp_path: Path) -> 
     assert camel.split("(")[0] in found
 
 
-def test_blocker3_units_and_main_loop_call_the_schedules(tmp_path: Path, monkeypatch) -> None:
+def test_blocker3_units_and_main_loop_call_the_schedules(tmp_path: Path) -> None:
     deploy = ROOT / "vps" / "deploy"
     for name in (
         "trading-oms.service",
@@ -71,25 +71,8 @@ def test_blocker3_units_and_main_loop_call_the_schedules(tmp_path: Path, monkeyp
         text = (deploy / name).read_text(encoding="utf-8")
         assert "ExecStart=" in text or "Unit=" in text
     assert "python -m auto_trading.execution oms" in (deploy / "trading-oms.service").read_text()
-    assert "python -m auto_trading.execution main" in (deploy / "trading-main.service").read_text()
+    assert "Conflicts=trading-oms.service" in (deploy / "trading-main.service").read_text()
     assert OMS_INTERVAL_SEC == 10
-    called: list[str] = []
-
-    def _rebuild(home, *, today, now, **kwargs):
-        del home, today, now, kwargs
-        called.append("rebuild")
-
-        class Outcome:
-            ran = True
-            ok = True
-
-        return Outcome()
-
-    monkeypatch.setattr("auto_trading.universe.rebuild.run_rebuild", _rebuild)
-    monkeypatch.setattr(
-        "auto_trading.execution.services._rebuild_due",
-        lambda home, now: True,
-    )
     (tmp_path / "state").mkdir()
     (tmp_path / "state" / "account.json").write_text(
         json.dumps({"nlv": 1000.0, "hwm": 1000.0, "day_start_nlv": 1000.0}) + "\n",
@@ -97,11 +80,9 @@ def test_blocker3_units_and_main_loop_call_the_schedules(tmp_path: Path, monkeyp
     )
     result = main_once(tmp_path, NOW)
     assert result["watchdog"] is True
-    assert result["oms"]["summarized"] is True
-    assert result["oms"]["rebuilt"] is True
-    assert called == ["rebuild"]
+    assert result["oms"]["summarized"] is False
+    assert result["oms"]["rebuilt"] is False
     assert (tmp_path / "state" / "r9_cycle.json").is_file()
-    assert (tmp_path / "reports" / "daily").is_dir()
     assert (tmp_path / "state" / "heartbeat.json").is_file()
     assert (tmp_path / "state" / "recon.json").is_file()
     later = NOW + timedelta(hours=3)

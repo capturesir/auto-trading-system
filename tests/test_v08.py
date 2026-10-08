@@ -785,7 +785,7 @@ def test_daily_summary_matches_the_journal(tmp_path: Path) -> None:
 
 def test_sync_list_includes_critical_logs_and_reports() -> None:
     text = Path("vps/deploy/sync_vps_to_box.txt").read_text(encoding="utf-8")
-    assert "logs/critical_*.jsonl" in text
+    assert "\nlogs/\n" in "\n" + text
     assert "reports/" in text
     completed = subprocess.run(
         [sys.executable, "scripts/check_v08_ci.py"],

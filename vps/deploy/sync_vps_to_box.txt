@@ -4,7 +4,7 @@ approvals/pending/
 notifications/outbox/
 alerts/sent/
 alerts/failed/
-logs/critical_*.jsonl
+logs/
 state/
 reports/
 exports/

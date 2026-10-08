@@ -197,3 +197,73 @@ class PaperGateway:
             on_violation=_trip,
         ).observe(accounts)
         return accounts
+
+    async def snapshot_account(self) -> dict[str, Any]:
+        """Connect, check R0, and return NLV, positions, and open orders."""
+        accounts = await self.connect()
+        ib = self._ib
+        nlv = 0.0
+        for item in ib.accountValues():
+            if getattr(item, "tag", "") != "NetLiquidation":
+                continue
+            if getattr(item, "currency", "") not in {"BASE", "HKD", "USD"}:
+                continue
+            nlv = float(item.value)
+            if item.currency == "BASE":
+                break
+        positions: list[dict[str, Any]] = []
+        for pos in ib.positions():
+            contract = pos.contract
+            positions.append(
+                {
+                    "symbol": str(contract.symbol),
+                    "qty": float(pos.position),
+                    "avg": float(pos.avgCost),
+                }
+            )
+        open_orders: list[dict[str, str]] = []
+        for trade in ib.openTrades():
+            order = trade.order
+            ref = str(getattr(order, "orderRef", "") or getattr(order, "orderId", ""))
+            open_orders.append({"order_id": ref, "symbol": str(trade.contract.symbol)})
+        return {
+            "accounts": accounts,
+            "nlv": nlv,
+            "positions": positions,
+            "open_orders": open_orders,
+        }
+
+    async def submit_order(self, intent: Any) -> Any:
+        """Place one order through the connected Gateway. E2 only."""
+        await self.connect()
+
+        class _Client:
+            def __init__(self, ib: Any, accounts: list[str]) -> None:
+                self._ib = ib
+                self._accounts = accounts
+
+            async def managed_accounts(self) -> list[str]:
+                return list(self._accounts)
+
+            async def place_order(self, order: dict[str, Any]) -> Any:
+                from ib_async import LimitOrder, Stock
+
+                contract = Stock(order["symbol"], order["exchange"], order["currency"])
+                side = "BUY" if order["side"] == "BUY" else "SELL"
+                ticket = LimitOrder(side, order["quantity"], order["limit_price"])
+                ticket.account = order["account"]
+                ticket.orderRef = order["client_id"]
+                ticket.tif = "DAY"
+                self._ib.placeOrder(contract, ticket)
+                from auto_trading.broker import OrderAck
+
+                return OrderAck(client_id=order["client_id"], broker_order_id=order["client_id"])
+
+        accounts = list(self._ib.managedAccounts())
+        broker = IbkrBroker(
+            _Client(self._ib, accounts),
+            port=self.settings.ibkr_port,
+            expected_account=self.settings.ibkr_paper_account,
+            trading_home=self.settings.trading_home,
+        )
+        return await broker.place(intent)

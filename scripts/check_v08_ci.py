@@ -36,23 +36,36 @@ SCAN_ROOTS = (
     "data",
     "research",
 )
-SUFFIXES = {
-    ".py",
-    ".md",
-    ".json",
-    ".jsonl",
-    ".txt",
-    ".yml",
-    ".yaml",
-    ".example",
-    ".sh",
-    ".ini",
-    ".template",
-    ".toml",
-    ".csv",
-    ".timer",
-    ".service",
-}
+# Files that split the stem so the scanner cannot see it. Adding a path
+# requires manager review. Do not extend this set for new code.
+REVIEWED_SPLIT_FILES = frozenset(
+    {
+        "scripts/check_v08_ci.py",
+        "src/auto_trading/paper_only.py",
+        "src/auto_trading/strategy/registry.py",
+        "tests/test_execution_paper.py",
+        "tests/test_paper_only.py",
+        "tests/test_review_fix1.py",
+        "tests/test_review_fix2.py",
+        "tests/test_v08d.py",
+    }
+)
+_SPLIT_RE = re.compile(r"""[\"']liv[\"']\s*\+""")
+
+
+def split_stem_offenders(root: Path = ROOT) -> list[str]:
+    """Paths that hide the stem by concatenation and are not on the reviewed list."""
+    from auto_trading.paper_only import iter_text_files
+
+    found: list[str] = []
+    for path in iter_text_files(root):
+        rel = path.relative_to(root).as_posix()
+        if rel in REVIEWED_SPLIT_FILES:
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if _SPLIT_RE.search(text):
+            found.append(rel)
+    return found
 
 
 def approval_literal_lines() -> list[str]:
@@ -122,7 +135,7 @@ def main() -> int:
         print("approvals CHECK missing", file=sys.stderr)
         return 1
     manifest = (ROOT / "vps" / "deploy" / "sync_vps_to_box.txt").read_text(encoding="utf-8")
-    if "logs/critical_*.jsonl" not in manifest or "\nreports/\n" not in manifest + "\n":
+    if "\nlogs/\n" not in "\n" + manifest + "\n" or "\nreports/\n" not in "\n" + manifest + "\n":
         print("sync list missing critical logs or reports", file=sys.stderr)
         return 1
     if "data/trading.db" not in manifest:
@@ -145,19 +158,23 @@ def main() -> int:
     if listed != list(ALLOWLIST):
         print("allowlist changed", file=sys.stderr)
         return 1
+    from auto_trading.paper_only import iter_text_files
+
     pattern = re.compile(rf"[A-Za-z0-9_]*{STEM}[A-Za-z0-9_]*", re.IGNORECASE)
     found: set[str] = set()
     for name in SCAN_ROOTS:
         base = ROOT / name
         if not base.exists():
             continue
-        for path in base.rglob("*"):
-            if not path.is_file():
-                continue
-            if path.suffix not in SUFFIXES and path.name != ".env.example":
-                continue
+        for path in iter_text_files(base):
             text = path.read_text(encoding="utf-8", errors="replace")
             found.update(pattern.findall(text))
+    offenders = split_stem_offenders(ROOT)
+    if offenders:
+        print("stem split outside the reviewed files:", file=sys.stderr)
+        for item in offenders:
+            print(item, file=sys.stderr)
+        return 1
     readme = ROOT / "README.md"
     if readme.is_file():
         found.update(pattern.findall(readme.read_text(encoding="utf-8", errors="replace")))

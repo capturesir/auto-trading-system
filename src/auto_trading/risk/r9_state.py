@@ -579,8 +579,15 @@ def close_risk_day(
     account: str = "",
     blocked: bool | None = None,
 ) -> dict[str, Any]:
-    """One risk-day end. The trigger day does not increment the cooldown."""
+    """One risk-day end. The trigger day does not increment the cooldown.
+
+    A risk date that was already counted is a no-op. The OMS loop can call
+    this many times after 08:00 and still add at most one day.
+    """
     document = load_cycle(home, now=now, account=account, hwm=nlv, risk_date=risk_date)
+    counted = document.get("last_counted_risk_date")
+    if isinstance(counted, str) and counted and risk_date <= counted:
+        return document
     previous = str(document["state"])
     held = _blocked(home) if blocked is None else blocked
     pure, events = on_risk_day_end(_pure(document), risk_date, is_xhkg, nlv, held)
