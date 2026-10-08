@@ -183,8 +183,8 @@ def test_watchdog_checks_gateway_r0_sqlite_disk_and_clock(
         "auto_trading.execution.services.gateway_probe",
         lambda home, now: {"logged_in": False, "accounts": [], "detail": "down"},
     )
-    monkeypatch.setattr("auto_trading.execution.services.disk_free_bytes", lambda home: 10)
-    monkeypatch.setattr("auto_trading.execution.services.clock_skew_sec", lambda now: 120.0)
+    monkeypatch.setattr("auto_trading.execution.services.disk_usage_ratio", lambda home: 0.9)
+    monkeypatch.setattr("auto_trading.execution.services.chrony_offset_sec", lambda: 9.0)
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "trading.db").write_bytes(b"not a database")
     assert watchdog_once(tmp_path, datetime(2026, 10, 8, 2, 0, tzinfo=UTC)) is True
@@ -310,7 +310,8 @@ def test_sync_direction_and_interval() -> None:
     assert "--delete" not in outbound
     assert "--delete" not in inbound
     assert "--update" in outbound
-    assert "--update" in inbound
+    assert "--checksum" in inbound
+    assert "--update" not in inbound
     assert outbound[-2].endswith("/") and "box.example" not in outbound[-2]
     assert inbound[-2].startswith("box.example:")
     assert inbound[-1].endswith("/")

@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -41,7 +42,7 @@ from auto_trading.execution.sync import ReconBreak, reconcile
 from auto_trading.paper_only import account_accepted
 from auto_trading.portfolio.journal import TradeJournal
 from auto_trading.reports.daily_summary import write_daily_summary
-from auto_trading.risk.gate import GateContext, RiskGate
+from auto_trading.risk.gate import GateContext
 from auto_trading.risk.r9_state import catch_up, observe_nlv
 
 MACAU = ZoneInfo("Asia/Macau")
@@ -51,9 +52,16 @@ WATCHDOG_INTERVAL_SEC = 30
 ACCOUNT_INTERVAL_SEC = 30
 SUBMIT_INTERVAL_SEC = 10
 SYNC_INTERVAL_SEC = 30
-DISK_MIN_BYTES = 512 * 1024 * 1024
-CLOCK_SKEW_MAX_SEC = 30.0
+DISK_USAGE_MAX = 0.85
+CLOCK_WARN_SEC = 1.0
+CLOCK_HALT_SEC = 5.0
+GATEWAY_RESTART_AFTER = 3
 _GATEWAY_STALE_SEC = 90.0
+_CHRONY_OFFSET = re.compile(r"Last offset\s*:\s*([+-]?\d+(?:\.\d+)?)\s+seconds", re.IGNORECASE)
+_CHRONY_SYSTEM = re.compile(
+    r"System time\s*:\s*(\d+(?:\.\d+)?)\s+seconds\s+(fast|slow)",
+    re.IGNORECASE,
+)
 
 
 def _now() -> datetime:
@@ -169,6 +177,7 @@ def oms_once(home: Path, now: datetime) -> dict[str, Any]:
     home.mkdir(parents=True, exist_ok=True)
     errors: list[str] = []
     state = {"rolled": False}
+    _step(home, "approved_hash", lambda: audit_confirmed_hashes(home, now), errors)
 
     def _heartbeat() -> None:
         journal = TradeJournal(home)
@@ -204,6 +213,47 @@ def oms_once(home: Path, now: datetime) -> dict[str, Any]:
     }
 
 
+def _hk_key(symbol: str) -> str | None:
+    """``700`` and ``0700.HK`` share one key. Other symbols stay as they are."""
+    text = symbol.strip()
+    if text.upper().endswith(".HK"):
+        head = text[:-3]
+        if head.isdigit():
+            return f"{int(head):04d}.HK"
+        return None
+    if text.isdigit() and 1 <= len(text) <= 5:
+        return f"{int(text):04d}.HK"
+    return None
+
+
+def _align_books(
+    broker: dict[str, float],
+    journal: dict[str, float],
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Fold HK names that appear on either side as ``NNNN.HK``."""
+    targets: set[str] = set()
+    for symbol in list(broker) + list(journal):
+        if str(symbol).upper().endswith(".HK"):
+            key = _hk_key(str(symbol))
+            if key:
+                targets.add(key)
+
+    def key_for(symbol: str) -> str:
+        folded = _hk_key(symbol)
+        if folded and (symbol.upper().endswith(".HK") or folded in targets):
+            return folded
+        return symbol
+
+    def fold(book: dict[str, float]) -> dict[str, float]:
+        totals: dict[str, float] = {}
+        for symbol, qty in book.items():
+            key = key_for(str(symbol))
+            totals[key] = totals.get(key, 0.0) + float(qty)
+        return totals
+
+    return fold(broker), fold(journal)
+
+
 def _position_qty(rows: Any) -> dict[str, float]:
     totals: dict[str, float] = {}
     if not isinstance(rows, list):
@@ -214,6 +264,15 @@ def _position_qty(rows: Any) -> dict[str, float]:
         symbol = str(row.get("symbol") or row.get("ticker") or "")
         if not symbol:
             continue
+        currency = str(row.get("currency") or "")
+        exchange = str(row.get("exchange") or "")
+        folded = _hk_key(symbol)
+        if folded and (
+            symbol.upper().endswith(".HK")
+            or currency.upper() == "HKD"
+            or exchange.upper() in {"SEHK", "HK"}
+        ):
+            symbol = folded
         qty = row.get("qty", row.get("quantity", 0))
         totals[symbol] = totals.get(symbol, 0.0) + float(qty or 0)
     return {symbol: qty for symbol, qty in totals.items() if abs(qty) > 1e-9}
@@ -243,6 +302,7 @@ def recon_once(
     journal = TradeJournal(home)
     if journal_qty is None:
         journal_qty = journal.quantity_by_ticker()
+    broker_qty, journal_qty = _align_books(broker_qty, journal_qty)
     positions = [
         BrokerPosition(symbol=symbol, quantity=qty) for symbol, qty in sorted(broker_qty.items())
     ]
@@ -377,8 +437,10 @@ def account_once(
             },
         )
         return {"status": "r0", "wrote": False, "code": exc.code}
+    if data.get("nlv") is None:
+        return {"status": "nlv_unavailable", "wrote": False}
     previous = _account(home)
-    nlv = float(data.get("nlv") or 0)
+    nlv = float(data["nlv"])
     hwm = max(float(previous.get("hwm") or 0), nlv)
     _start, _end, day = risk_window(now)
     if previous.get("risk_date") != day or previous.get("day_start_nlv") is None:
@@ -423,14 +485,65 @@ def sqlite_ok(home: Path) -> bool:
     return bool(row) and str(row[0]) == "ok"
 
 
-def disk_free_bytes(home: Path) -> int:
+def disk_usage_ratio(home: Path) -> float:
+    """Fraction of the filesystem in use. A full disk is 1."""
     target = home if home.exists() else Path("/")
-    return int(shutil.disk_usage(target).free)
+    usage = shutil.disk_usage(target)
+    if usage.total <= 0:
+        return 1.0
+    return usage.used / usage.total
 
 
-def clock_skew_sec(now: datetime) -> float:
-    """Seconds between ``now`` and the system clock."""
-    return abs((datetime.now(UTC) - now.astimezone(UTC)).total_seconds())
+def parse_chrony_tracking(text: str) -> float | None:
+    """Seconds of chrony offset. Positive means the clock is ahead."""
+    match = _CHRONY_OFFSET.search(text)
+    if match:
+        return abs(float(match.group(1)))
+    system = _CHRONY_SYSTEM.search(text)
+    if system:
+        return abs(float(system.group(1)))
+    return None
+
+
+def chrony_offset_sec() -> float | None:
+    """Chrony offset. None when chrony cannot be read. Not a self-comparison."""
+    try:
+        completed = subprocess.run(
+            ["chronyc", "tracking"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return parse_chrony_tracking(completed.stdout or "")
+
+
+def gateway_restart_argv() -> list[str]:
+    return ["systemctl", "restart", "ibgateway.service"]
+
+
+def restart_gateway() -> bool:
+    """Restart the paper Gateway. No-op unless the unit is allowed to connect."""
+    if os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() != "1":
+        return False
+    subprocess.run(gateway_restart_argv(), check=False)
+    return True
+
+
+def _set_pause(home: Path, key: str, active: bool) -> None:
+    path = home / "state" / "entry_pause.json"
+    payload: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            loaded = {}
+        if isinstance(loaded, dict):
+            payload = loaded
+    payload[key] = active
+    _write_json(path, payload)
 
 
 def _host_report(home: Path, now: datetime) -> dict[str, Any]:
@@ -447,33 +560,59 @@ def _host_report(home: Path, now: datetime) -> dict[str, Any]:
         issues.append("r0_account")
     if not sqlite_ok(home):
         issues.append("sqlite")
-    free = disk_free_bytes(home)
-    if free < DISK_MIN_BYTES:
+    usage = disk_usage_ratio(home)
+    if usage > DISK_USAGE_MAX:
         issues.append("disk")
-    skew = clock_skew_sec(now)
-    if skew > CLOCK_SKEW_MAX_SEC:
+    skew = chrony_offset_sec()
+    clock_warn = False
+    if skew is None or skew > CLOCK_HALT_SEC:
         issues.append("clock_skew")
+    elif skew > CLOCK_WARN_SEC:
+        clock_warn = True
     if logged_in and accounts and not r0_ok:
         from auto_trading.execution.r0 import latch_kill_switch
 
         latch_kill_switch(home, "R0_ACCOUNTS_CHANGED")
+    _set_pause(home, "watchdog", bool(issues))
     return {
         "at": now.isoformat(timespec="seconds"),
         "issues": issues,
+        "clock_warn": clock_warn,
         "gateway_login": logged_in,
         "r0_account": r0_ok,
         "sqlite": sqlite_ok(home),
-        "disk_free_bytes": free,
-        "clock_skew_sec": round(skew, 3),
+        "disk_usage": round(usage, 4),
+        "clock_skew_sec": None if skew is None else round(skew, 6),
         "detail": str(gateway.get("detail") or ""),
     }
 
 
+def _watchdog_streak(home: Path, failed: bool) -> int:
+    path = home / "state" / "watchdog_streak.json"
+    count = 0
+    if path.is_file():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            count = int(loaded.get("count") or 0)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            count = 0
+    count = count + 1 if failed else 0
+    _write_json(path, {"count": count})
+    return count
+
+
 def watchdog_once(home: Path, now: datetime) -> bool:
-    """Heartbeat plus Gateway login, R0, SQLite, disk, and clock skew."""
+    """Heartbeat plus Gateway login, R0, SQLite, disk, and chrony offset."""
     path = home / "state" / "heartbeat.json"
     heartbeat_due = heartbeat_alert_due(path, now)
     report = _host_report(home, now)
+    streak = _watchdog_streak(home, bool(report["issues"]))
+    report["fail_streak"] = streak
+    report["gateway_restart"] = False
+    report["gateway_restarted"] = False
+    if streak >= GATEWAY_RESTART_AFTER and streak % GATEWAY_RESTART_AFTER == 0:
+        report["gateway_restart"] = True
+        report["gateway_restarted"] = restart_gateway()
     _write_json(home / "state" / "watchdog.json", report)
     alerted = False
     if heartbeat_due:
@@ -493,6 +632,15 @@ def watchdog_once(home: Path, now: datetime) -> bool:
             marker.parent.mkdir(parents=True, exist_ok=True)
             marker.write_text(stamp + "\n", encoding="utf-8")
             alerted = True
+    if report.get("clock_warn") and "clock_skew" not in report["issues"]:
+        marker = home / "state" / "clock_warn.json"
+        stamp = now.astimezone(MACAU).strftime("%Y%m%dT%H")
+        previous = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+        if previous != stamp:
+            write_ops_notice(home, message_zh="時鐘偏差超過 1 秒。", now=now, kind="clock_warn")
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(stamp + "\n", encoding="utf-8")
+            alerted = True
     return alerted or heartbeat_due or bool(report["issues"])
 
 
@@ -508,8 +656,9 @@ def _manifest_lines(path: Path) -> list[str]:
 def sync_argv(root: Path, remote: str, *, direction: str) -> list[str]:
     """rsync arguments. Approved strategies move box to VPS only.
 
-    ``--update`` skips a destination file that is already newer, so an older
-    copy cannot replace it. The universe copy never uses ``--delete``.
+    The box-to-VPS pass uses ``--checksum`` and not ``--update``, so the box
+    copy replaces a newer tampered file. The VPS-to-box pass keeps ``--update``
+    and lists only VPS-owned paths. Neither pass uses ``--delete``.
     """
     if direction == "out":
         name = "sync_vps_to_box.txt"
@@ -523,13 +672,19 @@ def sync_argv(root: Path, remote: str, *, direction: str) -> list[str]:
         row.startswith("strategies/approved") or row == "strategies/registry.jsonl" for row in rows
     ):
         raise RuntimeError("outbound sync must not carry approved strategies")
+    if direction == "out" and any(
+        row == "state/" or row.endswith("adr_premium_state.json") for row in rows
+    ):
+        raise RuntimeError("outbound sync must not carry box-owned state")
     target = remote if remote.endswith("/") else remote + "/"
     local = f"{root}/"
     if direction == "out":
         source, dest = local, target
+        flags = ["--update"]
     else:
         source, dest = target, local
-    return ["rsync", "-a", "--update", f"--files-from={manifest}", source, dest]
+        flags = ["--checksum"]
+    return ["rsync", "-a", *flags, f"--files-from={manifest}", source, dest]
 
 
 def sync_once(root: Path, *, remote: str = "") -> int:
@@ -548,12 +703,115 @@ def sync_once(root: Path, *, remote: str = "") -> int:
             raise RuntimeError("sync must not delete")
         completed = subprocess.run(argv, check=False)
         code = code or completed.returncode
+    audit_confirmed_hashes(Path(os.environ.get("TRADING_HOME", root)), _now())
     record.write_text(json.dumps({"status": "ran", "code": code}) + "\n", encoding="utf-8")
     return code
 
 
+def _strategies_root(home: Path) -> Path:
+    local = home / "strategies"
+    if (local / "approved").is_dir():
+        return local
+    return Path(__file__).resolve().parents[3] / "strategies"
+
+
+def audit_confirmed_hashes(home: Path, now: datetime) -> list[str]:
+    """Compare the three confirmed strategies with the files on disk.
+
+    A mismatch pauses new entries and writes one critical alert.
+    """
+    from auto_trading.alerts.critical import write_critical_event
+    from auto_trading.execution.strategy_book import confirmed_mismatches
+
+    bad = confirmed_mismatches(_strategies_root(home))
+    _set_pause(home, "approved_hash", bool(bad))
+    if not bad:
+        return bad
+    marker = home / "state" / "approved_hash_alert.txt"
+    stamp = ",".join(bad)
+    previous = marker.read_text(encoding="utf-8").strip() if marker.is_file() else ""
+    if previous == stamp:
+        return bad
+    write_critical_event(
+        home,
+        kind="approved_hash_mismatch",
+        reason_code="R25",
+        rule_id="R25",
+        now=now,
+        account=_pin(),
+        message_zh="核准策略雜湊與確認值不符。新開倉已暫停。",
+        resume_hint="在 box 還原核准檔後再同步。",
+        detail={"strategies": bad},
+    )
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(stamp + "\n", encoding="utf-8")
+    return bad
+
+
+def _number(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _whole(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | None:
+    """Map one strategy-engine row, or a flat row, onto an order."""
+    symbol = str(row.get("ticker") or row.get("symbol") or "").strip()
+    if not symbol:
+        return None
+    qty = _number(row.get("qty", row.get("quantity")))
+    if qty is None or qty <= 0:
+        return None
+    intent_id = str(row.get("intent_id") or row.get("client_id") or "").strip()
+    if not intent_id:
+        return None
+    raw_mult = row.get("live_size_multiplier", envelope.get("live_size_multiplier"))
+    version = row.get("strategy_version", envelope.get("strategy_version"))
+    market = row.get("market") or envelope.get("market")
+    currency = row.get("currency") or envelope.get("currency")
+    if market is None or currency is None:
+        try:
+            from auto_trading.market.instruments import describe
+
+            spec = describe(symbol)
+            market = market or spec.market
+            currency = currency or spec.currency
+        except Exception:
+            market = market or None
+            currency = currency or None
+    limit = row.get("limit_price")
+    digest = row.get("spec_hash", envelope.get("spec_hash"))
+    strategy_id = row.get("strategy_id", envelope.get("strategy_id"))
+    return OrderIntent(
+        client_id=str(row.get("client_id") or intent_id),
+        symbol=symbol,
+        side=str(row.get("side") or "BUY"),
+        quantity=qty,
+        limit_price=None if limit is None else _number(limit),
+        intent_id=intent_id,
+        intent_type=str(row.get("intent_type") or "ENTRY"),
+        account=str(row.get("account") or _pin()),
+        mode=str(row.get("mode") or envelope.get("mode") or "paper"),
+        live_size_multiplier=None if raw_mult is None else _number(raw_mult),
+        spec_hash=None if digest is None else str(digest),
+        strategy_id=None if strategy_id is None else str(strategy_id),
+        strategy_version=None if version is None else _whole(version),
+        market=None if market is None else str(market),
+        currency=None if currency is None else str(currency),
+        lot_size=_whole(row.get("lot_size")),
+    )
+
+
 def load_intent_orders(home: Path) -> list[OrderIntent]:
-    """Read intent files. A missing directory is an empty queue."""
+    """Read ``intent/1.0`` files. ``ticker`` and ``qty`` are the engine names."""
     root = home / "intents"
     if not root.is_dir():
         return []
@@ -563,12 +821,19 @@ def load_intent_orders(home: Path) -> list[OrderIntent]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        rows = payload.get("intents") if isinstance(payload, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        rows = payload.get("intents")
+        envelope = payload
         if not isinstance(rows, list):
             rows = [payload]
+            envelope = {}
         for row in rows:
-            if isinstance(row, dict) and row.get("symbol") and row.get("client_id"):
-                found.append(OrderIntent.model_validate(row))
+            if not isinstance(row, dict):
+                continue
+            intent = _row_intent(row, envelope)
+            if intent is not None:
+                found.append(intent)
     return found
 
 
@@ -585,6 +850,179 @@ def _broker_place(intent: OrderIntent) -> None:
     asyncio.run(gateway.submit_order(intent))
 
 
+def _production_context(home: Path, now: datetime) -> GateContext:
+    """Risk snapshot from the local files. Missing broker data fails closed."""
+    from auto_trading.execution.risk_state import verify_risk_limits_file
+    from auto_trading.risk.gate import Held
+    from auto_trading.risk.limits import EXPECTED_LIMITS
+
+    account = _account(home)
+    pin = _pin()
+    gateway: dict[str, Any] = {}
+    gpath = home / "state" / "gateway.json"
+    if gpath.is_file():
+        try:
+            loaded = json.loads(gpath.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                gateway = loaded
+        except (OSError, json.JSONDecodeError):
+            gateway = {}
+    accounts = tuple(str(item) for item in gateway.get("accounts") or [])
+    if not accounts and pin:
+        accounts = (pin,)
+    nlv = float(account.get("nlv") or 0)
+    limits = dict(EXPECTED_LIMITS)
+    try:
+        limits = verify_risk_limits_file(home)
+    except Exception:
+        limits = dict(EXPECTED_LIMITS)
+    positions: list[Held] = []
+    for row in account.get("positions") or []:
+        if isinstance(row, dict) and row.get("symbol"):
+            positions.append(Held(str(row["symbol"]), float(row.get("qty") or 0), 0.0))
+    recon_ok = True
+    recon_path = home / "state" / "recon.json"
+    if recon_path.is_file():
+        try:
+            recon_ok = not bool(json.loads(recon_path.read_text(encoding="utf-8")).get("freeze"))
+        except (OSError, json.JSONDecodeError):
+            recon_ok = False
+    return GateContext(
+        port=_port() or 4002,
+        accounts=accounts,
+        expected_account=pin,
+        baseline_accounts=accounts,
+        nlv=nlv,
+        cash=float(account.get("cash") or nlv),
+        hwm=float(account.get("hwm") or nlv),
+        day_start_nlv=float(account.get("day_start_nlv") or nlv),
+        limits=limits,
+        positions=positions,
+        now=now,
+        kill_switch=(home / "KILL_SWITCH").is_file(),
+        recon_ok=recon_ok,
+        connected=bool(account.get("gateway_logged_in")),
+        trading_home=home,
+        approved_dir=_strategies_root(home),
+        fx_to_base={"HKD": 1.0},
+    )
+
+
+def _production_session(home: Path, now: datetime, approval: dict[str, str]) -> ApprovalSession:
+    pin = _pin()
+
+    def read_accounts() -> tuple[str, ...]:
+        path = home / "state" / "gateway.json"
+        if path.is_file():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                rows = payload.get("accounts") or []
+                if rows:
+                    return tuple(str(item) for item in rows)
+            except (OSError, json.JSONDecodeError, AttributeError):
+                return ()
+        return (pin,) if pin else ()
+
+    forced = os.environ.get("FORCE_MANUAL_APPROVAL", "").strip().lower() in {"1", "true", "yes"}
+    return ApprovalSession(
+        read_accounts=read_accounts,
+        port=_port() or 4002,
+        pin=pin,
+        baseline=(pin,) if pin else (),
+        kill_switch_present=lambda: (home / "KILL_SWITCH").is_file(),
+        r0_violation=lambda: False,
+        force_manual=lambda: forced,
+        strategy_approval=lambda: approval["value"],
+        now=lambda: now,
+    )
+
+
+def _file_approval(intent: OrderIntent, root: Path | None) -> str:
+    from auto_trading.execution.strategy_book import file_for, load_approved
+
+    if not intent.strategy_id or intent.strategy_version is None:
+        return "manual"
+    path = file_for(intent.strategy_id, intent.strategy_version, root)
+    if path is None:
+        return "manual"
+    try:
+        document = load_approved(path)
+    except (OSError, ValueError, TypeError):
+        return "manual"
+    execution = document.get("execution")
+    approval = execution.get("approval") if isinstance(execution, dict) else None
+    return str(approval or "manual")
+
+
+def _bind_approved_hash(ctx: GateContext, intent: OrderIntent) -> None:
+    from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES, approved_row_hash
+
+    if not intent.strategy_id or intent.strategy_version is None:
+        return
+    pinned = CONFIRMED_SPEC_HASHES.get((intent.strategy_id, intent.strategy_version))
+    if pinned is not None:
+        ctx.approved_hash = pinned
+        return
+    ctx.approved_hash = approved_row_hash(
+        intent.strategy_id, intent.strategy_version, ctx.approved_dir
+    )
+
+
+def _journal_then_send(
+    home: Path,
+    intent: OrderIntent,
+    session: ApprovalSession,
+    now: datetime,
+    sender: Callable[[OrderIntent], None],
+) -> None:
+    """Persist the order, then call the broker. A second pass will not resend."""
+    from auto_trading.execution.approval_mode import record_auto_approval
+    from auto_trading.execution.oms import order_ref
+
+    key = intent.intent_id or intent.client_id
+    order_id = order_ref(key, 1)
+    price = float(intent.limit_price or 0)
+    payload = {
+        "intent_id": key,
+        "symbol": intent.symbol,
+        "side": intent.side.value,
+        "quantity": intent.quantity,
+        "account": intent.account,
+    }
+    record_auto_approval(
+        home,
+        order_id,
+        payload,
+        session,
+        attempt=1,
+        approval_price=price,
+        order=intent,
+    )
+    journal = TradeJournal(home)
+    journal.record_intent(
+        {
+            "intent_id": key,
+            "strategy_id": intent.strategy_id,
+            "strategy_version": intent.strategy_version,
+            "spec_hash": intent.spec_hash,
+            "signal_id": intent.signal_id,
+            "symbol": intent.symbol,
+            "side": intent.side.value,
+            "quantity": intent.quantity,
+        }
+    )
+    journal.create_order(
+        order_id=order_id,
+        intent_id=key,
+        seq=1,
+        symbol=intent.symbol,
+        intent_type=intent.intent_type,
+    )
+    journal.set_order_state(order_id, "SUBMITTING", when=now)
+    sender(intent)
+    journal.set_order_state(order_id, "SUBMITTED", when=now)
+
+
 def submit_once(
     home: Path,
     now: datetime,
@@ -595,38 +1033,83 @@ def submit_once(
     place: Callable[[OrderIntent], None] | None = None,
     readonly: bool | None = None,
 ) -> dict[str, Any]:
-    """Intents, then the risk gate, then approval, then the broker.
+    """Engine intents, the full risk gate, approval, the journal, then the broker.
 
-    While ReadOnlyApi is yes the function returns before any of that work
-    and does not call the broker. Sending is possible only after E2.
+    While ReadOnlyApi is yes the function returns before any of that work.
+    The same ``intent_id`` is not sent twice. ``mode`` other than paper, and
+    any size multiplier, never reach the broker.
     """
+    from auto_trading.execution.approvals import queue_order
+    from auto_trading.risk.gate import evaluate
+
     is_readonly = read_only_api() if readonly is None else readonly
     if is_readonly:
         payload = {"status": "readonly", "sent": 0, "reason": "ReadOnlyApi"}
         _write_json(home / "state" / "submit.json", payload)
         return payload
+    audit_confirmed_hashes(home, now)
     orders = list(intents) if intents is not None else load_intent_orders(home)
+    context = ctx if ctx is not None else _production_context(home, now)
+    approval = {"value": "auto"}
+    active = session if session is not None else _production_session(home, now, approval)
     sender = place
     if sender is None and os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() == "1":
         sender = _broker_place
     sent = 0
     skipped = 0
+    gated: list[str] = []
+    rejected: list[str] = []
+    journal = TradeJournal(home)
     for intent in orders:
-        if ctx is not None:
-            try:
-                RiskGate(ctx).allow(intent)
-            except Exception:
-                skipped += 1
-                continue
-        if session is not None and not is_auto_approver(decide_approval_mode(intent, session)):
+        key = intent.intent_id or intent.client_id
+        if journal.intent_in_flight(key):
+            skipped += 1
+            continue
+        _bind_approved_hash(context, intent)
+        gated.append(intent.symbol)
+        code = evaluate(intent, context)
+        blocked = intent.mode != "paper" or intent.live_size_multiplier is not None
+        if code or blocked:
+            reason = code or "LIVE_NOT_AUTHORIZED"
+            journal.record_risk_check(symbol=intent.symbol, code=reason, intent_id=key, when=now)
+            rejected.append(reason)
+            skipped += 1
+            continue
+        approval["value"] = _file_approval(intent, context.approved_dir)
+        if session is None:
+            active = _production_session(home, now, approval)
+        if not is_auto_approver(decide_approval_mode(intent, active)):
+            pending = home / "approvals" / "pending" / f"{key}.json"
+            if not pending.is_file():
+                queue_order(
+                    home,
+                    key,
+                    {
+                        "intent_id": key,
+                        "symbol": intent.symbol,
+                        "side": intent.side.value,
+                        "quantity": intent.quantity,
+                    },
+                )
             skipped += 1
             continue
         if sender is None:
             skipped += 1
             continue
-        sender(intent)
+        try:
+            _journal_then_send(home, intent, active, now, sender)
+        except Exception:
+            skipped += 1
+            rejected.append("error")
+            continue
         sent += 1
-    payload = {"status": "open", "sent": sent, "skipped": skipped}
+    payload = {
+        "status": "open",
+        "sent": sent,
+        "skipped": skipped,
+        "gated": gated,
+        "rejected": rejected,
+    }
     _write_json(home / "state" / "submit.json", payload)
     return payload
 

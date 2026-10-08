@@ -7,6 +7,7 @@ does not open a socket. Ports are the paper pair only.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -26,6 +27,29 @@ from auto_trading.execution.contracts import map_contract
 from auto_trading.execution.r0 import AccountGuard, latch_kill_switch
 from auto_trading.execution.stops import cancel_keeps_protective
 from auto_trading.risk.gate import MAX_QUOTE_DELAY_SEC, RiskRejected
+
+
+def _field(item: Any, name: str) -> str:
+    if isinstance(item, dict):
+        return str(item.get(name, "") or "")
+    return str(getattr(item, name, "") or "")
+
+
+def net_liquidation_base(rows: list[Any]) -> float | None:
+    """Net liquidation in BASE only.
+
+    A missing BASE line is a failure. USD or HKD must not stand in for it.
+    """
+    for item in rows:
+        if _field(item, "tag") != "NetLiquidation":
+            continue
+        if _field(item, "currency") != "BASE":
+            continue
+        try:
+            return float(_field(item, "value"))
+        except ValueError:
+            return None
+    return None
 
 
 class IbkrBroker:
@@ -202,36 +226,50 @@ class PaperGateway:
         """Connect, check R0, and return NLV, positions, and open orders."""
         accounts = await self.connect()
         ib = self._ib
-        nlv = 0.0
-        for item in ib.accountValues():
-            if getattr(item, "tag", "") != "NetLiquidation":
-                continue
-            if getattr(item, "currency", "") not in {"BASE", "HKD", "USD"}:
-                continue
-            nlv = float(item.value)
-            if item.currency == "BASE":
-                break
-        positions: list[dict[str, Any]] = []
-        for pos in ib.positions():
-            contract = pos.contract
-            positions.append(
-                {
-                    "symbol": str(contract.symbol),
-                    "qty": float(pos.position),
-                    "avg": float(pos.avgCost),
-                }
-            )
-        open_orders: list[dict[str, str]] = []
-        for trade in ib.openTrades():
-            order = trade.order
-            ref = str(getattr(order, "orderRef", "") or getattr(order, "orderId", ""))
-            open_orders.append({"order_id": ref, "symbol": str(trade.contract.symbol)})
-        return {
-            "accounts": accounts,
-            "nlv": nlv,
-            "positions": positions,
-            "open_orders": open_orders,
-        }
+        try:
+            nlv = net_liquidation_base(list(ib.accountValues()))
+            positions: list[dict[str, Any]] = []
+            for pos in ib.positions():
+                contract = pos.contract
+                positions.append(
+                    {
+                        "symbol": str(contract.symbol),
+                        "qty": float(pos.position),
+                        "avg": float(pos.avgCost),
+                        "currency": str(getattr(contract, "currency", "") or ""),
+                        "exchange": str(
+                            getattr(contract, "primaryExchange", "")
+                            or getattr(contract, "exchange", "")
+                            or ""
+                        ),
+                    }
+                )
+            open_orders: list[dict[str, str]] = []
+            for trade in ib.openTrades():
+                order = trade.order
+                contract = trade.contract
+                ref = str(getattr(order, "orderRef", "") or getattr(order, "orderId", ""))
+                open_orders.append(
+                    {
+                        "order_id": ref,
+                        "symbol": str(contract.symbol),
+                        "currency": str(getattr(contract, "currency", "") or ""),
+                        "exchange": str(
+                            getattr(contract, "primaryExchange", "")
+                            or getattr(contract, "exchange", "")
+                            or ""
+                        ),
+                    }
+                )
+            return {
+                "accounts": accounts,
+                "nlv": nlv,
+                "positions": positions,
+                "open_orders": open_orders,
+            }
+        finally:
+            with contextlib.suppress(Exception):
+                ib.disconnect()
 
     async def submit_order(self, intent: Any) -> Any:
         """Place one order through the connected Gateway. E2 only."""

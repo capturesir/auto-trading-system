@@ -564,6 +564,19 @@ def test_t26_approved_hashes_and_a_changed_byte_is_r25(tmp_path: Path) -> None:
     target = approved / "sig_trend.v3.json"
     target.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
     digest = spec_hash(loads_strict(target.read_text(encoding="utf-8")))
+    from auto_trading.strategy.registry import append_event
+
+    append_event(
+        strategies / "registry.jsonl",
+        {
+            "strategy_id": "sig_trend",
+            "version": 3,
+            "spec_hash": digest,
+            "event": "approved",
+            "actor": "user",
+            "mode_after": "paper",
+        },
+    )
     ctx = _ctx(tmp_path, approved_hash=digest, approved_dir=strategies)
     assert (
         RiskGate(ctx).allow(_buy(strategy_id="sig_trend", strategy_version=3, spec_hash=digest))

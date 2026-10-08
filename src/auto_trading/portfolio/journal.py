@@ -1023,6 +1023,21 @@ class TradeJournal:
             totals[ticker] = totals.get(ticker, 0.0) + float(row["qty"])
         return {ticker: qty for ticker, qty in totals.items() if abs(qty) > 1e-9}
 
+    def intent_in_flight(self, intent_id: str) -> bool:
+        """True once this intent has been journaled for send."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM orders
+                WHERE intent_id = ?
+                  AND state IN (
+                    'SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'FILLED'
+                  )
+                """,
+                (intent_id,),
+            ).fetchone()
+        return row is not None
+
     def working_orders(self) -> list[tuple[str, str]]:
         """Orders the broker should still be working: ``(order_id, symbol)``."""
         with self._connect() as conn:

@@ -1,11 +1,23 @@
 # VPS to box. One rsync path per line.
+# Box-owned files stay off this list. adr_premium_state.json is synced box to VPS only.
 backups/
 approvals/pending/
 notifications/outbox/
 alerts/sent/
 alerts/failed/
 logs/
-state/
+state/account.json
+state/gateway.json
+state/heartbeat.json
+state/recon.json
+state/watchdog.json
+state/risk_limits.json
+state/r9_cycle.json
+state/submit.json
+state/sync.json
+state/breakers.json
+state/entry_pause.json
+state/service_errors.jsonl
 reports/
 exports/
 data/universe/

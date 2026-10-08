@@ -328,7 +328,15 @@ def _r20(intent: OrderIntent, ctx: GateContext, account_qty: float) -> bool:
 
 
 def _r25_file(intent: OrderIntent, ctx: GateContext) -> str | None:
-    if intent.spec_hash is None or intent.strategy_version is None:
+    opening = intent.intent_type in OPENING
+    identified = bool(intent.strategy_id) or intent.spec_hash is not None
+    identified = identified or intent.strategy_version is not None
+    incomplete = (
+        not intent.strategy_id or intent.spec_hash is None or intent.strategy_version is None
+    )
+    if incomplete:
+        if opening and identified and ctx.approved_dir is not None:
+            return "R25"
         return None
     from auto_trading.execution.strategy_book import r25_code
 
@@ -337,6 +345,7 @@ def _r25_file(intent: OrderIntent, ctx: GateContext) -> str | None:
         version=intent.strategy_version,
         spec_hash_value=intent.spec_hash,
         root=ctx.approved_dir,
+        opening=opening,
     )
 
 
@@ -506,7 +515,25 @@ def _entry_pause(ctx: GateContext) -> str | None:
         return "ANOMALY_BREAKER_ACTIVE"
     if r30:
         return "NOTIFY_FAILURE_PAUSE"
+    if _infra_paused(ctx):
+        return "ENTRIES_PAUSED"
     return None
+
+
+def _infra_paused(ctx: GateContext) -> bool:
+    """Watchdog and approved-file checks pause new entries only."""
+    if ctx.trading_home is None:
+        return False
+    path = ctx.trading_home / "state" / "entry_pause.json"
+    if not path.is_file():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return True
+    if not isinstance(payload, dict):
+        return True
+    return any(bool(value) for value in payload.values())
 
 
 def _recon_blocked(ctx: GateContext) -> bool:

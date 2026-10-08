@@ -37,6 +37,7 @@ _KINDS = frozenset(
         "r30_notify_failure",
         "pool_rebuild_failed",
         "pool_stale",
+        "approved_hash_mismatch",
     }
 )
 

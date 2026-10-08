@@ -142,7 +142,8 @@ set +a
 | `TRADING_HOME` | 意圖、提醒、風控快照的根目錄 | `/workspace/trading` |
 | `BASE_CURRENCY` | 基準幣別，`HKD` 或 `USD` | `HKD` |
 | `TRADING_SYNC_REMOTE` | rsync 目標。未設定就不同步 | 無 |
-| `IB_READ_ONLY_API` | `yes` 時下單迴圈不送單。E2 之前維持 yes | `yes` |
+| `IB_READ_ONLY_API` | `yes` 時下單迴圈不送單。E2 之前維持 yes，不是真實交易開關 | `yes` |
+| `TRADING_GATEWAY_CONNECT` | 設為 `1` 時帳戶、看門狗和送單行程才連線到已登入的模擬 Gateway。未設定時測試和 CI 不開 socket | 不連線 |
 
 這個系統只做模擬。沒有環境變數或設定可以把連線改成真實帳戶；其他埠在載入設定時直接拒絕。模擬帳戶在每一項 R0 檢查都通過時，由唯一的批准函式自動批准；其餘情況一律人手批准，非模擬帳戶不能改成自動。唯一的批准開關是 `FORCE_MANUAL_APPROVAL`，設為 true 時全部改回人手。已刪除的自動批准名稱若仍出現在環境或設定裡，程式會拒絕啟動。關鍵事件會寫入 `logs/critical_*.jsonl` 和 `alerts/pending/`，再轉到通知 outbox。每日 06:00（澳門）產生成交摘要。連續異常（R29）和通知失效（R30）只暫停新開倉，出場和停損照常。模擬帳戶代碼必須是 `DU`、可選一個大寫字母、再接數字，而且 `IBKR_PAPER_ACCOUNT` 必填，看到的帳戶必須正好是這一個。不符合就寫下全停、斷開連線，並記一筆異常。交易程式不讀登入名稱和密碼，只連接已經登入的 Gateway（預設 `127.0.0.1:4002`）。IBC 範本和啟動檢查以 VPS 上的 `vps/deploy/render_template.py` 與 `vps/deploy/ibgw-start.sh` 為準，帳密由 systemd-creds 寫進 tmpfs。`ReadOnlyApi` 維持 yes，要等 E2 並經使用者同意才改。風控閘門是唯一會叫到券商 `place` 的路徑。新開倉會自檢 `state/risk_limits.json`（`risk_limits/1.1`），`trading_scope` 必須是 `paper_only`，而且雜湊必須和檔內 `limits` 以及核准向量一致。出場和保護性停損不因這份檔案不符而停住。全停會撤銷未成交的一般單、把 `strategy_runtime` 設為 halted，並寫入日誌。解除要在這台主機的互動終端輸入確認短語；R0 違規仍在時不能解除。只有 `--reset-hwm` 才會重設淨值高點，並寫入 `hwm_history`。信心度不足用 `LOW_CONFIDENCE`，不和 R19 混用。
 

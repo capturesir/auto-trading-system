@@ -6,10 +6,13 @@ contain the stem must already be on that list.
 
 from __future__ import annotations
 
+import ast
+import io
 import re
 import sqlite3
 import sys
 import tempfile
+import tokenize
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,10 +54,90 @@ REVIEWED_SPLIT_FILES = frozenset(
     }
 )
 _SPLIT_RE = re.compile(r"""[\"']liv[\"']\s*\+""")
+_STEM_RE = re.compile(rf"[A-Za-z0-9_]*{STEM}[A-Za-z0-9_]*", re.IGNORECASE)
+
+
+def _fold_const(node: ast.AST) -> str | None:
+    """Fold a constant string expression. A plain literal is not a concatenation."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _fold_const(node.left)
+        right = _fold_const(node.right)
+        if left is None or right is None:
+            return None
+        return left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+                continue
+            if isinstance(value, ast.FormattedValue):
+                folded = _fold_const(value.value)
+                if folded is None:
+                    return None
+                parts.append(folded)
+                continue
+            return None
+        return "".join(parts)
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr != "join" or len(node.args) != 1:
+            return None
+        base = _fold_const(node.func.value)
+        arg = node.args[0]
+        if base is None or not isinstance(arg, ast.List | ast.Tuple):
+            return None
+        bits = [_fold_const(elt) for elt in arg.elts]
+        if any(bit is None for bit in bits):
+            return None
+        return base.join([bit for bit in bits if bit is not None])
+    return None
+
+
+def _concat_hides_stem(text: str) -> bool:
+    """True when joined string pieces contain the stem."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        tree = None
+    if tree is not None:
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.BinOp | ast.JoinedStr | ast.Call):
+                continue
+            folded = _fold_const(node)
+            if folded and _STEM_RE.search(folded):
+                return True
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return False
+    group: list[str] = []
+
+    def flush() -> bool:
+        nonlocal group
+        if len(group) < 2:
+            group = []
+            return False
+        try:
+            joined = "".join(ast.literal_eval(tok) for tok in group)
+        except (SyntaxError, ValueError):
+            group = []
+            return False
+        group = []
+        return _STEM_RE.search(joined) is not None
+
+    for tok in tokens:
+        if tok.type == tokenize.STRING:
+            group.append(tok.string)
+            continue
+        if flush():
+            return True
+    return flush()
 
 
 def split_stem_offenders(root: Path = ROOT) -> list[str]:
-    """Paths that hide the stem by concatenation and are not on the reviewed list."""
+    """Paths outside the reviewed list that hide the stem by joining strings."""
     from auto_trading.paper_only import iter_text_files
 
     found: list[str] = []
@@ -63,7 +146,10 @@ def split_stem_offenders(root: Path = ROOT) -> list[str]:
         if rel in REVIEWED_SPLIT_FILES:
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
-        if _SPLIT_RE.search(text):
+        if path.suffix == ".py" and _concat_hides_stem(text):
+            found.append(rel)
+            continue
+        if path.suffix != ".py" and _SPLIT_RE.search(text):
             found.append(rel)
     return found
 
