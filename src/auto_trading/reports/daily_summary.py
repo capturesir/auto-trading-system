@@ -216,7 +216,21 @@ def write_daily_summary(
     nlv = float(account.get("nlv") or 0)
     hwm = float(account.get("hwm") or 0)
     realized = float(account.get("realized_base") or 0)
-    positions = account.get("positions") or []
+    strategy_rows = journal.strategy_position_rows()
+    if strategy_rows:
+        positions = [
+            {
+                "ticker": row["ticker"],
+                "strategy_id": row["strategy_id"],
+                "qty": row["qty"],
+                "market_value_base": row["avg_cost"],
+                "unrealized_pnl_base": 0.0,
+            }
+            for row in strategy_rows
+            if float(row["qty"])
+        ]
+    else:
+        positions = account.get("positions") or []
     unrealized = sum(float(row.get("unrealized_pnl_base") or 0) for row in positions)
     name = f"summary_{start.strftime('%Y%m%d')}.json"
     folder = trading_home / "reports" / "daily"
@@ -253,7 +267,7 @@ def write_daily_summary(
         "fills": fills,
         "rejections": rejections,
         "rejection_counts": rejection_counts,
-        "positions": list(account.get("positions") or []),
+        "positions": positions,
         "pnl": {
             "realized_base": realized,
             "unrealized_base": unrealized,

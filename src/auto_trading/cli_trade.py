@@ -284,6 +284,10 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("pnl")
     why = sub.add_parser("why")
     why.add_argument("key")
+    recon = sub.add_parser("recon")
+    recon_sub = recon.add_subparsers(dest="recon_command", required=True)
+    recon_sub.add_parser("ack")
+    sub.add_parser("strategies")
     sub.add_parser("pause")
     sub.add_parser("stop")
     resume_cmd = sub.add_parser("resume")
@@ -377,6 +381,28 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "why":
         print(json.dumps(TradeJournal(home).why(args.key), ensure_ascii=False, default=str))
+        return
+    if args.command == "strategies":
+        from auto_trading.execution.strategy_book import startup_lines
+
+        for line in startup_lines():
+            print(line)
+        return
+    if args.command == "recon":
+        from auto_trading.execution.strategy_positions import ack_manual
+
+        broker_path = home / "state" / "broker_positions.json"
+        payload = json.loads(broker_path.read_text(encoding="utf-8"))
+        broker_qty = {row["symbol"]: float(row["qty"]) for row in payload}
+        con_ids = {row["symbol"]: int(row.get("con_id") or 0) for row in payload}
+        account = str(payload[0].get("account") or "") if payload else ""
+        ack_manual(
+            TradeJournal(home),
+            account=account,
+            broker_qty=broker_qty,
+            con_ids=con_ids,
+        )
+        print("acked")
         return
     from datetime import datetime
 

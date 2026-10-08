@@ -1,0 +1,110 @@
+{
+  "schema_version": "strategy/1.2",
+  "id": "ta_breakout52",
+  "version": 1,
+  "mode": "paper",
+  "name": "52週新高突破",
+  "author": "b_group",
+  "created_at": "2026-10-06T21:55:00+08:00",
+  "parent_version": null,
+  "markets": [
+    "US",
+    "JP",
+    "HK",
+    "KR",
+    "TW"
+  ],
+  "universe": {
+    "source": "ta_pool",
+    "asset_type": "equity",
+    "exclude_pending_removal": true,
+    "one_per_issuer_group": true,
+    "pool": {
+      "base_indices": {
+        "US": [
+          "SP500",
+          "NDX"
+        ],
+        "JP": [
+          "N225"
+        ],
+        "HK": [
+          "HSI",
+          "HSCEI"
+        ],
+        "TW": [
+          "TW50"
+        ],
+        "KR": [
+          "KOSPI200"
+        ]
+      },
+      "refresh": "monthly",
+      "refresh_at": "first_business_day",
+      "file": "data/universe/ta_pool.csv"
+    },
+    "filters": {
+      "min_adv60_base": {
+        "US": 150000000,
+        "JP": 80000000,
+        "HK": 50000000,
+        "TW": 40000000,
+        "KR": 40000000
+      },
+      "min_close_local": {
+        "US": 5,
+        "JP": 100,
+        "HK": 1,
+        "TW": 10,
+        "KR": 1000
+      },
+      "lot_price_buffer_pct": 2.0,
+      "min_history_sessions": 260
+    }
+  },
+  "trigger": {
+    "type": "market"
+  },
+  "confirm": {
+    "all_of": [
+      {
+        "indicator": "close_above_high",
+        "period": 252
+      }
+    ]
+  },
+  "selection": {
+    "rank_by": "adv60_base",
+    "order": "desc"
+  },
+  "action": {
+    "side": "buy",
+    "size": {
+      "type": "pct_equity",
+      "value": 5.0,
+      "max_adv20_pct": 5.0
+    },
+    "order": {
+      "type": "limit",
+      "offset_bps": 10,
+      "session": "RTH",
+      "tif": "DAY"
+    }
+  },
+  "exits": [
+    {
+      "type": "close_below_low",
+      "period": 50
+    },
+    {
+      "type": "protective_stop_pct",
+      "value": 15.0
+    }
+  ],
+  "portfolio": {
+    "max_gross_pct": 40.0
+  },
+  "execution": {
+    "approval": "auto"
+  }
+}

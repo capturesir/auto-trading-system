@@ -47,6 +47,11 @@ class OpenOrder:
     protective: bool = False
     opened_at: datetime | None = None
     status: str = ""
+    quantity: float = 0.0
+    strategy_id: str | None = None
+    notional_base: float = 0.0
+    market: str = ""
+    currency: str = ""
 
 
 @dataclass
@@ -133,6 +138,8 @@ class GateContext:
     macro_blackout: bool = False
     minutes_since_open: float | None = 10
     loss_streak: int = 0
+    loss_streaks: dict[str, int] = field(default_factory=dict)
+    approved_dir: Path | None = None
     stage: str = "pre"
     approval_price: float | None = None
     reapproval_deviation: float = 0.015
@@ -190,6 +197,9 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         return "LIVE_NOT_AUTHORIZED"
     if intent.spec_hash is not None and ctx.approved_hash != intent.spec_hash:
         return "R25"
+    file_r25 = _r25_file(intent, ctx)
+    if file_r25:
+        return file_r25
     if ctx.registry_mode != "paper":
         return "LIVE_NOT_AUTHORIZED"
     market = _market(intent)
@@ -206,7 +216,7 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     orphan_exit = intent.intent_type in REDUCING and not intent.parent_intent_id
     if orphan_exit and not held_qty:
         return "R27"
-    if intent.side.value == "SELL" and intent.quantity > held_qty + 1e-9:
+    if intent.side.value == "SELL" and _r20(intent, ctx, held_qty):
         return "R20"
     key = intent.intent_id or intent.client_id
     active = [row for row in ctx.open_orders if row.active and row.intent_id == key]
@@ -233,7 +243,8 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         price = _price(intent, ctx)
         if price and abs(price / ctx.approval_price - 1) > ctx.reapproval_deviation:
             return "REAPPROVAL_REQUIRED"
-    if ctx.loss_streak >= int(ctx.limits["R23_consecutive_loss_demote"]):
+    streak = _loss_streak(intent, ctx)
+    if streak >= int(ctx.limits["R23_consecutive_loss_demote"]):
         ctx.r23_note = "r23_demote_count"
     return None
 
@@ -269,6 +280,71 @@ def _market(intent: OrderIntent) -> str | None:
 
 def _position_qty(ctx: GateContext, intent: OrderIntent) -> float:
     return sum(row.quantity for row in ctx.positions if row.symbol == intent.symbol)
+
+
+def _strategy_qty(ctx: GateContext, intent: OrderIntent) -> float:
+    if not intent.strategy_id:
+        return _position_qty(ctx, intent)
+    return sum(
+        row.quantity
+        for row in ctx.positions
+        if row.symbol == intent.symbol and row.strategy_id == intent.strategy_id
+    )
+
+
+def _r20(intent: OrderIntent, ctx: GateContext, account_qty: float) -> bool:
+    """True when this sell would exceed the strategy or the account."""
+    if intent.quantity > _strategy_qty(ctx, intent) + 1e-9:
+        return True
+    pending = sum(
+        row.quantity
+        for row in ctx.open_orders
+        if row.active
+        and row.symbol == intent.symbol
+        and row.side == "SELL"
+        and row.intent_id != (intent.intent_id or intent.client_id)
+    )
+    return pending + intent.quantity > account_qty + 1e-9
+
+
+def _r25_file(intent: OrderIntent, ctx: GateContext) -> str | None:
+    if intent.spec_hash is None or intent.strategy_version is None:
+        return None
+    from auto_trading.execution.strategy_book import r25_code
+
+    return r25_code(
+        strategy_id=intent.strategy_id,
+        version=intent.strategy_version,
+        spec_hash_value=intent.spec_hash,
+        root=ctx.approved_dir,
+    )
+
+
+def _loss_streak(intent: OrderIntent, ctx: GateContext) -> int:
+    if intent.strategy_id and ctx.loss_streaks:
+        return ctx.loss_streaks.get(intent.strategy_id, 0)
+    return ctx.loss_streak
+
+
+def _pending_open(
+    ctx: GateContext,
+    *,
+    symbol: str | None = None,
+    market: str | None = None,
+    currency: str | None = None,
+) -> float:
+    total = 0.0
+    for row in ctx.open_orders:
+        if not row.active or row.side != "BUY" or row.protective:
+            continue
+        if symbol is not None and row.symbol != symbol:
+            continue
+        if market is not None and row.market != market:
+            continue
+        if currency is not None and row.currency != currency:
+            continue
+        total += row.notional_base
+    return total
 
 
 def _price(intent: OrderIntent, ctx: GateContext) -> float | None:
@@ -337,18 +413,20 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
         return "R2"
     fx = ctx.fx_to_base
     held = sum(_base_value(row, fx) for row in ctx.positions if row.symbol == intent.symbol)
-    if held + notional > ctx.nlv * float(ctx.limits["R3_max_position_pct_nlv"]) + 1e-6:
+    pending_symbol = _pending_open(ctx, symbol=intent.symbol)
+    position_cap = ctx.nlv * float(ctx.limits["R3_max_position_pct_nlv"])
+    if held + pending_symbol + notional > position_cap + 1e-6:
         return "R3"
     market_cap = ctx.limits["R4_max_market_pct_nlv"][market]
-    market_held = _market_exposure(ctx, market)
+    market_held = _market_exposure(ctx, market) + _pending_open(ctx, market=market)
     if market_held + notional > ctx.nlv * float(market_cap) + 1e-6:
         return "R4"
     ccy_cap = ctx.limits["R5_max_ccy_pct_nlv"].get(currency)
     if ccy_cap is not None:
-        ccy_held = _currency_exposure(ctx, currency)
+        ccy_held = _currency_exposure(ctx, currency) + _pending_open(ctx, currency=currency)
         if ccy_held + notional > ctx.nlv * float(ccy_cap) + 1e-6:
             return "R5"
-    gross = sum(_base_value(row, fx) for row in ctx.positions)
+    gross = sum(_base_value(row, fx) for row in ctx.positions) + _pending_open(ctx)
     if gross + notional > ctx.nlv * float(ctx.limits["R6_max_gross_exposure_pct_nlv"]) + 1e-6:
         return "R6"
     if ctx.limits["R7_require_cash_cover"] and notional > ctx.cash + 1e-6:

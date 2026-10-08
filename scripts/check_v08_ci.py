@@ -84,6 +84,13 @@ def main() -> int:
     if "logs/critical_*.jsonl" not in manifest or "\nreports/\n" not in manifest + "\n":
         print("sync list missing critical logs or reports", file=sys.stderr)
         return 1
+    if "data/trading.db" not in manifest:
+        print("sync list missing the read-only database", file=sys.stderr)
+        return 1
+    inbound = (ROOT / "vps" / "deploy" / "sync_box_to_vps.txt").read_text(encoding="utf-8")
+    if "data/universe/ta_pool.meta.json" not in inbound or "data/universe/archive/" not in inbound:
+        print("box sync list missing the universe archive", file=sys.stderr)
+        return 1
     allow_path = ROOT / "ci" / "r0_live_allowlist.txt"
     raw = allow_path.read_text(encoding="utf-8").splitlines()
     listed = [line.strip() for line in raw if line.strip()]

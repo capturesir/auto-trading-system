@@ -22,6 +22,7 @@ CONFIRM = frozenset(
         "event_gap_up",
         "event_volume_breakout",
         "close_above_ref",
+        "close_above_high",
     }
 )
 GUARDS = frozenset({"no_new_low", "max_chase", "not_limit_up"})
@@ -43,6 +44,8 @@ EXITS_10 = frozenset(
     }
 )
 EXITS_11 = EXITS_10 | {"close_below_ref", "event_reversal"}
+EXITS_12 = EXITS_11 | {"close_below_low", "protective_stop_pct"}
+SCHEMAS = {"strategy/1.0", "strategy/1.1", "strategy/1.2"}
 MIN_CONFIDENCE = 60
 
 
@@ -83,20 +86,32 @@ def validate_strategy(document: Mapping[str, Any]) -> None:
     """Raise :class:`StrategyValidationError` when the document is not runnable."""
     errors: list[str] = []
     schema = document.get("schema_version")
-    if schema not in {"strategy/1.0", "strategy/1.1"}:
-        errors.append(f"schema_version {schema!r} is not strategy/1.0 or strategy/1.1")
-    allowed_exits = EXITS_11 if schema == "strategy/1.1" else EXITS_10
+    if schema not in SCHEMAS:
+        errors.append(f"schema_version {schema!r} is not a known strategy schema")
+    if schema == "strategy/1.2":
+        allowed_exits = EXITS_12
+    elif schema == "strategy/1.1":
+        allowed_exits = EXITS_11
+    else:
+        allowed_exits = EXITS_10
     _walk_confidence(document, errors, "")
+    exit_types: list[str] = []
     for index, exit_rule in enumerate(document.get("exits", [])):
         exit_type = exit_rule.get("type") if isinstance(exit_rule, dict) else None
+        if isinstance(exit_type, str):
+            exit_types.append(exit_type)
         if exit_type == "reversal" or exit_type not in allowed_exits:
             errors.append(f"exits[{index}].type {exit_type!r} is not a known exit")
+    if "protective_stop_pct" in exit_types and "stop_loss_pct" in exit_types:
+        errors.append("protective_stop_pct cannot be combined with stop_loss_pct")
     indicators: list[tuple[str, str]] = []
     _indicators(document.get("confirm"), indicators)
     for rule in document.get("exits", []):
         if isinstance(rule, dict):
             _indicators(rule.get("any_of"), indicators)
     known = CONFIRM | GUARDS
+    if schema != "strategy/1.2":
+        known = known - {"close_above_high"}
     for name, _kind in indicators:
         if name not in known:
             errors.append(f"indicator {name!r} is not in the vocabulary")

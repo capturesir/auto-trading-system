@@ -1,0 +1,12 @@
+# Box to VPS. One rsync path per line.
+signals.json
+signals_archive/
+intents/
+strategies/approved/
+strategies/registry.jsonl
+approvals/decided/
+config/adr_map.csv
+config/adr_premium_rule_expected.json
+data/universe/ta_pool.meta.json
+data/universe/archive/
+state/adr_premium_state.json

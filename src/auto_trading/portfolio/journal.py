@@ -39,7 +39,10 @@ class TradeJournal:
                     strategy_version INTEGER,
                     spec_hash TEXT,
                     signal_id TEXT,
-                    payload_json TEXT NOT NULL
+                    payload_json TEXT NOT NULL,
+                    trigger_ref_json TEXT,
+                    protective_stop_pct REAL,
+                    trigger_type TEXT
                 );
                 CREATE TABLE IF NOT EXISTS executions (
                     fill_id TEXT PRIMARY KEY,
@@ -157,7 +160,22 @@ class TradeJournal:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts_utc TEXT NOT NULL,
                     kind TEXT NOT NULL,
-                    detail_json TEXT NOT NULL
+                    detail_json TEXT NOT NULL,
+                    strategy_id TEXT
+                );
+                CREATE TABLE IF NOT EXISTS strategy_positions (
+                    account TEXT NOT NULL,
+                    strategy_id TEXT NOT NULL,
+                    con_id INTEGER NOT NULL,
+                    ticker TEXT NOT NULL,
+                    qty REAL NOT NULL,
+                    avg_cost REAL NOT NULL,
+                    root_intent_id TEXT,
+                    protective_stop_order_id TEXT,
+                    oca_group TEXT,
+                    opened_at_utc TEXT,
+                    updated_at_utc TEXT,
+                    PRIMARY KEY (account, strategy_id, con_id)
                 );
                 CREATE TRIGGER IF NOT EXISTS anomaly_events_no_update
                 BEFORE UPDATE ON anomaly_events
@@ -178,6 +196,8 @@ class TradeJournal:
             self._create_approvals(conn)
             self._create_ops_tables(conn)
             self._migrate_orders(conn)
+            self._migrate_intents(conn)
+            self._migrate_anomaly(conn)
 
     def _create_approvals(self, conn: sqlite3.Connection) -> None:
         """Approvals table. The check value is filled from the mode constant."""
@@ -271,15 +291,39 @@ class TradeJournal:
             if name not in present:
                 conn.execute(statement)
 
-    def record_intent(self, intent: dict[str, Any]) -> None:
+    def _migrate_intents(self, conn: sqlite3.Connection) -> None:
+        present = {row[1] for row in conn.execute("PRAGMA table_info(intents)")}
+        additions = {
+            "trigger_ref_json": "ALTER TABLE intents ADD COLUMN trigger_ref_json TEXT",
+            "protective_stop_pct": "ALTER TABLE intents ADD COLUMN protective_stop_pct REAL",
+            "trigger_type": "ALTER TABLE intents ADD COLUMN trigger_type TEXT",
+        }
+        for name, statement in additions.items():
+            if name not in present:
+                conn.execute(statement)
+
+    def _migrate_anomaly(self, conn: sqlite3.Connection) -> None:
+        present = {row[1] for row in conn.execute("PRAGMA table_info(anomaly_events)")}
+        if "strategy_id" not in present:
+            conn.execute("ALTER TABLE anomaly_events ADD COLUMN strategy_id TEXT")
+
+    def record_intent(
+        self,
+        intent: dict[str, Any],
+        *,
+        trigger_ref_raw: str | None = None,
+        protective_stop_pct: float | None = None,
+        trigger_type: str | None = None,
+    ) -> None:
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO intents (
                     intent_id, strategy_id, strategy_version,
-                    spec_hash, signal_id, payload_json
+                    spec_hash, signal_id, payload_json,
+                    trigger_ref_json, protective_stop_pct, trigger_type
                 )
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(intent_id) DO NOTHING
                 """,
                 (
@@ -289,6 +333,9 @@ class TradeJournal:
                     intent.get("spec_hash"),
                     intent.get("signal_id"),
                     json.dumps(intent, ensure_ascii=False),
+                    trigger_ref_raw,
+                    protective_stop_pct,
+                    trigger_type,
                 ),
             )
 
@@ -778,13 +825,152 @@ class TradeJournal:
         kind: str,
         detail: dict[str, Any] | None = None,
         when: datetime | None = None,
+        strategy_id: str | None = None,
     ) -> None:
         ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO anomaly_events (ts_utc, kind, detail_json) VALUES (?, ?, ?)",
-                (ts, kind, json.dumps(detail or {}, ensure_ascii=False)),
+                """
+                INSERT INTO anomaly_events (ts_utc, kind, detail_json, strategy_id)
+                VALUES (?, ?, ?, ?)
+                """,
+                (ts, kind, json.dumps(detail or {}, ensure_ascii=False), strategy_id),
             )
+
+    def apply_strategy_fill(
+        self,
+        *,
+        account: str,
+        strategy_id: str,
+        con_id: int,
+        ticker: str,
+        side: str,
+        qty: float,
+        price: float,
+        root_intent_id: str | None,
+        when: datetime,
+    ) -> None:
+        """Update one strategy row from a fill, or set ``_manual`` outright."""
+        ts = when.isoformat(timespec="seconds")
+        oca = None if root_intent_id is None else f"{strategy_id}:{root_intent_id}"
+        with self._connect() as conn:
+            current = conn.execute(
+                """
+                SELECT qty, avg_cost, opened_at_utc, root_intent_id
+                FROM strategy_positions
+                WHERE account = ? AND strategy_id = ? AND con_id = ?
+                """,
+                (account, strategy_id, con_id),
+            ).fetchone()
+            if side == "SET":
+                new_qty = qty
+                avg = float(current["avg_cost"]) if current else 0.0
+                opened = ts if current is None else current["opened_at_utc"]
+                root = root_intent_id
+            elif current is None:
+                signed = qty if side == "BUY" else -qty
+                new_qty = signed
+                avg = price
+                opened = ts
+                root = root_intent_id
+            else:
+                old_qty = float(current["qty"])
+                old_avg = float(current["avg_cost"])
+                if side == "BUY":
+                    new_qty = old_qty + qty
+                    avg = ((old_qty * old_avg) + (qty * price)) / new_qty if new_qty else old_avg
+                else:
+                    new_qty = old_qty - qty
+                    avg = old_avg
+                opened = current["opened_at_utc"]
+                root = current["root_intent_id"] or root_intent_id
+            conn.execute(
+                """
+                INSERT INTO strategy_positions (
+                    account, strategy_id, con_id, ticker, qty, avg_cost,
+                    root_intent_id, protective_stop_order_id, oca_group,
+                    opened_at_utc, updated_at_utc
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                ON CONFLICT(account, strategy_id, con_id) DO UPDATE SET
+                    ticker = excluded.ticker,
+                    qty = excluded.qty,
+                    avg_cost = excluded.avg_cost,
+                    root_intent_id = excluded.root_intent_id,
+                    oca_group = excluded.oca_group,
+                    updated_at_utc = excluded.updated_at_utc
+                """,
+                (account, strategy_id, con_id, ticker, new_qty, avg, root, oca, opened, ts),
+            )
+
+    def set_protective_stop(
+        self,
+        *,
+        account: str,
+        strategy_id: str,
+        con_id: int,
+        order_id: str | None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE strategy_positions
+                SET protective_stop_order_id = ?
+                WHERE account = ? AND strategy_id = ? AND con_id = ?
+                """,
+                (order_id, account, strategy_id, con_id),
+            )
+
+    def strategy_position_rows(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM strategy_positions ORDER BY ticker, strategy_id"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def strategy_pnl(self) -> list[dict[str, Any]]:
+        """Cash by strategy. A SELL adds proceeds and a BUY subtracts cost."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT i.strategy_id AS strategy_id,
+                       i.payload_json AS payload_json,
+                       e.symbol AS ticker,
+                       e.price AS price,
+                       e.quantity AS quantity
+                FROM executions e
+                JOIN intents i ON i.intent_id = e.intent_id
+                """
+            ).fetchall()
+        totals: dict[tuple[str, str], float] = {}
+        for row in rows:
+            payload = json.loads(row["payload_json"]) if row["payload_json"] else {}
+            side = str(payload.get("side") or "BUY")
+            signed = float(row["quantity"]) * float(row["price"])
+            if side == "BUY":
+                signed = -signed
+            key = (str(row["strategy_id"]), str(row["ticker"]))
+            totals[key] = totals.get(key, 0.0) + signed
+        return [
+            {"strategy_id": strategy_id, "ticker": ticker, "pnl": cash}
+            for (strategy_id, ticker), cash in sorted(totals.items())
+        ]
+
+    def backup(self, dest: Path) -> None:
+        """Write a read-only snapshot. Callers query the copy, not this file."""
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            dest.unlink()
+        with self._connect() as source, sqlite3.connect(dest) as target:
+            source.backup(target)
+
+    def anomalies_for(self, strategy_id: str) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM anomaly_events WHERE strategy_id = ? ORDER BY id",
+                (strategy_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def remember_controlled(self, symbols: set[str], *, when: datetime | None = None) -> None:
         """Replace the last controlled ADR set. Used when the map is valid."""
@@ -820,7 +1006,7 @@ class TradeJournal:
                 (fill["intent_id"],),
             ).fetchone()
         intent_payload = json.loads(intent["payload_json"]) if intent else None
-        return {
+        traced = {
             "found": True,
             "fill": dict(fill),
             "intent_id": fill["intent_id"],
@@ -829,3 +1015,19 @@ class TradeJournal:
             "strategy_id": None if intent is None else intent["strategy_id"],
             "intent": intent_payload,
         }
+        if intent is None:
+            return traced
+        raw = intent["trigger_ref_json"]
+        traced["trigger_ref_json"] = raw
+        traced["trigger_type"] = intent["trigger_type"]
+        traced["rationale"] = None if intent_payload is None else intent_payload.get("rationale")
+        if intent["trigger_type"] == "market" and raw:
+            from auto_trading.execution.trigger_ref import fixed_rationale, pool_status
+
+            parsed = json.loads(raw)
+            detail, ok = pool_status(self.home, parsed, str(intent_payload.get("ticker") or ""))
+            traced["signal_id"] = None
+            traced["template_rationale"] = fixed_rationale(parsed)
+            traced["pool_hash_check"] = detail
+            traced["pool_hash_ok"] = ok
+        return traced

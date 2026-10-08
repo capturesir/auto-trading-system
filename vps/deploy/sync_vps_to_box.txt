@@ -8,3 +8,4 @@ logs/critical_*.jsonl
 state/
 reports/
 exports/
+data/trading.db

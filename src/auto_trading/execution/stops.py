@@ -20,6 +20,35 @@ def protective_stop_price(
     return average_fill * (1 - distance)
 
 
+def disaster_stop_price(
+    average_fill: float,
+    *,
+    protective_stop_pct: float | None = None,
+    stop_loss_pct: float | None = None,
+    multiplier: float = 1.5,
+    default_pct: float = 0.15,
+    market: str = "US",
+) -> float:
+    """Stop from percent points in a strategy file, or from the decimal default.
+
+    ``protective_stop_pct`` and ``stop_loss_pct`` are percent points (15.0
+    means 15%). The default is already a fraction and is not divided again.
+    A protective value is not widened by ``multiplier``.
+    """
+    from auto_trading.execution.pricing import align_tick
+    from auto_trading.market.ticks import tick_size
+
+    if protective_stop_pct is not None:
+        distance = protective_stop_pct / 100.0
+    elif stop_loss_pct is not None:
+        distance = (stop_loss_pct / 100.0) * multiplier
+    else:
+        distance = default_pct
+    raw = average_fill * (1.0 - distance)
+    tick = tick_size(market, raw)
+    return align_tick(raw, tick, buy=False)
+
+
 def cancel_keeps_protective(*, protective: bool, full_stop: bool) -> bool:
     """True when this cancel must be refused so the broker stop stays working."""
     return protective and full_stop
