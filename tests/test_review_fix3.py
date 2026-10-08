@@ -71,19 +71,22 @@ def test_malicious_intent_never_reaches_the_broker(tmp_path: Path, monkeypatch) 
         "spec_hash": "sha256:" + "ab" * 32,
         "mode": bad_mode,
         "live_size_multiplier": 3.0,
+        "valid_from": "2026-10-13T09:30:00+08:00",
     }
     folder = tmp_path / "intents"
     folder.mkdir()
     (folder / "x.json").write_text(json.dumps({"intents": [row]}), encoding="utf-8")
     sent: list[OrderIntent] = []
-    result: dict[str, object] = {}
-    for _ in range(3):
-        result = submit_once(tmp_path, MONEY, place=sent.append, readonly=False)
+    results = [submit_once(tmp_path, MONEY, place=sent.append, readonly=False) for _ in range(3)]
     assert sent == []
-    assert result["sent"] == 0
-    assert result["gated"] == ["0700.HK"]
-    assert result["rejected"] == ["R0_NOT_PAPER_ACCOUNT"]
-    assert "U1234567" not in json.dumps(result)
+    assert results[0]["sent"] == 0
+    assert results[0]["gated"] == ["0700.HK"]
+    assert results[0]["rejected"] == ["R0_NOT_PAPER_ACCOUNT"]
+    assert results[1]["rejected"] == []
+    assert results[1]["gated"] == []
+    assert results[2]["sent"] == 0
+    assert "U1234567" not in json.dumps(results[0])
+    assert not (tmp_path / "intents" / "x.json").exists()
 
 
 def _passing_ctx(home: Path) -> GateContext:
@@ -132,6 +135,7 @@ def test_non_paper_mode_and_multiplier_never_reach_the_broker(tmp_path: Path, mo
         currency="USD",
         mode=bad_mode,
         live_size_multiplier=3.0,
+        valid_from=datetime(2026, 10, 2, 21, 30, tzinfo=ZoneInfo("Asia/Macau")),
     )
     sent: list[OrderIntent] = []
     result = submit_once(
@@ -213,6 +217,7 @@ def test_engine_intent_with_ticker_reaches_the_gate(tmp_path: Path, monkeypatch)
                 "side": "BUY",
                 "qty": 100,
                 "limit_price": 400.0,
+                "valid_from": "2026-10-02T09:30:00+08:00",
             }
         ],
     }
@@ -225,7 +230,8 @@ def test_engine_intent_with_ticker_reaches_the_gate(tmp_path: Path, monkeypatch)
     assert loaded[0].quantity == 100
     assert loaded[0].strategy_id == "ta_breakout52"
     sent: list[OrderIntent] = []
-    result = submit_once(tmp_path, GATE_NOW, place=sent.append, readonly=False)
+    inside = datetime(2026, 10, 2, 10, 0, tzinfo=ZoneInfo("Asia/Macau"))
+    result = submit_once(tmp_path, inside, place=sent.append, readonly=False)
     assert result["gated"] == ["0700.HK"]
     assert sent == []
 

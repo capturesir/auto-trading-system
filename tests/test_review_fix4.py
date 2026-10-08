@@ -37,6 +37,7 @@ from auto_trading.execution.strategy_book import (
 )
 from auto_trading.market.quotes import write_quotes
 from auto_trading.portfolio.journal import TradeJournal
+from auto_trading.risk.r9_state import observe_nlv
 from auto_trading.strategy.spec import spec_hash
 
 PIN = "DUR243736"
@@ -286,6 +287,7 @@ def test_same_rejection_is_logged_once_and_a_cancelled_order_leaves(
     tmp_path: Path, monkeypatch
 ) -> None:
     _ready(tmp_path, monkeypatch)
+    observe_nlv(tmp_path, "2026-10-02", 1_000_000.0, NOW, account=PIN, hwm=1_000_000.0)
     _quote(tmp_path, NOW, age=timedelta(minutes=31))
     _intent_file(tmp_path, "repeat")
     for _ in range(3):
@@ -297,7 +299,7 @@ def test_same_rejection_is_logged_once_and_a_cancelled_order_leaves(
     assert count is not None
     assert count[0] == 1
     _quote(tmp_path, NOW, age=timedelta(0))
-    (tmp_path / "intents" / "repeat.json").unlink()
+    (tmp_path / "intents" / "repeat.json").unlink(missing_ok=True)
     _intent_file(tmp_path, "done-me")
     sent: list[OrderIntent] = []
     first = submit_once(tmp_path, NOW, place=sent.append, readonly=False)

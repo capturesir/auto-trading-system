@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import ROUND_DOWN, ROUND_HALF_UP, ROUND_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_UP, Decimal
 from typing import Any
 
 from auto_trading.market.ticks import tick_size
@@ -80,12 +80,9 @@ def reference_limit(
     return limit, None
 
 
-def quantize_to_tick(market: str, price: float) -> float:
-    """Nearest tick, as a short float. Binary residue such as ``...0003`` is dropped."""
-    tick = tick_size(market, price)
-    quantum = Decimal(str(tick))
-    amount = Decimal(str(price))
-    return float(amount.quantize(quantum, rounding=ROUND_HALF_UP))
+def quantize_to_tick(market: str, price: float, *, buy: bool) -> float:
+    """Round to a multiple of the band's tick. BUY goes down, SELL goes up."""
+    return align_tick(price, tick_size(market, price), buy=buy)
 
 
 def align_tick(price: float, tick: float, *, buy: bool) -> float:

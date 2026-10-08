@@ -231,6 +231,16 @@ def _as_utc(value: Any) -> datetime | None:
     return None
 
 
+def _tick_ready(ticker: Any) -> bool:
+    """True once a price and a timestamp tick are both on the ticker."""
+    price = _finite_price(getattr(ticker, "last", None))
+    if price is None:
+        price = _finite_price(getattr(ticker, "delayedLast", None))
+    if price is None:
+        return False
+    return _tick_time(ticker, "delayedLastTimestamp", "lastTimestamp") is not None
+
+
 def _tick_time(ticker: Any, *names: str) -> datetime | None:
     """Tick 45 is ``lastTimestamp``. Tick 88 is ``delayedLastTimestamp``."""
     for name in names:
@@ -285,20 +295,36 @@ def _quote_row(symbol: str, ticker: Any, received: datetime) -> dict[str, Any] |
     }
 
 
-async def _wait_for_tick(ticker: Any) -> None:
-    """Return when a price and a timestamp are present, or when the wait ends."""
+async def _wait_for_tick(ticker: Any) -> datetime | None:
+    """Receipt time of the first complete tick, or None when the wait ends.
+
+    The stamp is taken inside the tick callback, before any later sleep.
+    """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + _QUOTE_WAIT_SEC
-    while True:
-        price = _finite_price(getattr(ticker, "last", None))
-        if price is None:
-            price = _finite_price(getattr(ticker, "delayedLast", None))
-        stamp = _tick_time(ticker, "delayedLastTimestamp", "lastTimestamp")
-        if price is not None and stamp is not None:
-            return
-        if loop.time() >= deadline:
-            return
-        await asyncio.sleep(0.05)
+    receipt: datetime | None = None
+
+    def _note(*_args: Any) -> None:
+        nonlocal receipt
+        if receipt is None and _tick_ready(ticker):
+            receipt = datetime.now(UTC)
+
+    event = getattr(ticker, "updateEvent", None)
+    if event is not None and hasattr(event, "__iadd__"):
+        event += _note
+    try:
+        _note()
+        while receipt is None:
+            if loop.time() >= deadline:
+                return None
+            await asyncio.sleep(0.05)
+            if receipt is None and _tick_ready(ticker):
+                receipt = datetime.now(UTC)
+        return receipt
+    finally:
+        if event is not None and hasattr(event, "__isub__"):
+            with contextlib.suppress(Exception):
+                event -= _note
 
 
 class PaperGateway:
@@ -359,9 +385,8 @@ class PaperGateway:
                 contract = Stock(spec.ib_symbol, spec.exchange, spec.currency)
                 ticker = ib.reqMktData(contract, "", False, False)
                 try:
-                    await _wait_for_tick(ticker)
-                    received = datetime.now(UTC)
-                    row = _quote_row(symbol, ticker, received)
+                    received = await _wait_for_tick(ticker)
+                    row = _quote_row(symbol, ticker, received) if received is not None else None
                     if row is not None:
                         found.append(row)
                 finally:
@@ -442,7 +467,9 @@ class PaperGateway:
                 contract = Stock(order["symbol"], order["exchange"], order["currency"])
                 order["market"] = map_contract(intent.symbol).market
                 side = "BUY" if order["side"] == "BUY" else "SELL"
-                limit = quantize_to_tick(order["market"], float(order["limit_price"]))
+                limit = quantize_to_tick(
+                    order["market"], float(order["limit_price"]), buy=side == "BUY"
+                )
                 ticket = LimitOrder(side, order["quantity"], limit)
                 ticket.account = order["account"]
                 ticket.orderRef = order["client_id"]

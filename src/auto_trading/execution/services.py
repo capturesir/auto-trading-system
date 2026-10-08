@@ -1333,6 +1333,58 @@ def _record_once(
     journal.record_risk_check(symbol=symbol, code=code, intent_id=intent_id, when=now)
 
 
+def _close_intent(
+    journal: TradeJournal,
+    intent: OrderIntent,
+    *,
+    code: str,
+    state: str,
+    now: datetime,
+    source: Path | None,
+    retired: set[Path],
+) -> None:
+    """Mark one intent terminal and take its file out of the pending queue.
+
+    A second pass with the same ``intent_id`` finds the terminal order and
+    does not call the broker again.
+    """
+    key = intent.intent_id or intent.client_id
+    _record_once(journal, symbol=intent.symbol, code=code, intent_id=key, now=now)
+    latest = journal.latest_order_state(key)
+    busy = {"SUBMITTING", "SUBMITTED", "PARTIALLY_FILLED", "FILLED"}
+    if latest not in _TERMINAL_STATES and latest not in busy:
+        from auto_trading.execution.oms import order_ref
+
+        order_id = order_ref(key, 1)
+        journal.record_intent(
+            {
+                "intent_id": key,
+                "strategy_id": intent.strategy_id,
+                "strategy_version": intent.strategy_version,
+                "spec_hash": intent.spec_hash,
+                "signal_id": intent.signal_id,
+                "symbol": intent.symbol,
+                "side": intent.side.value,
+                "quantity": intent.quantity,
+            }
+        )
+        try:
+            journal.create_order(
+                order_id=order_id,
+                intent_id=key,
+                seq=1,
+                symbol=intent.symbol,
+                intent_type=intent.intent_type,
+                protective=intent.protective,
+            )
+        except sqlite3.IntegrityError:
+            pass
+        else:
+            journal.set_order_state(order_id, state, when=now)
+    if source is not None:
+        retired.add(source)
+
+
 def _queue_destinations(home: Path, retired: set[Path], kept: set[Path]) -> None:
     dest_dir = home / "intents" / "done"
     for path in retired - kept:
@@ -1402,11 +1454,33 @@ def submit_once(
                 retired.add(source)
             skipped += 1
             continue
+        opening = (
+            intent.intent_type in _OPENING and not intent.protective and not intent.reduce_only
+        )
+        if intent.valid_from is None and opening:
+            _close_intent(
+                journal,
+                intent,
+                code="INTENT_EXPIRED",
+                state="INTENT_REJECTED",
+                now=now,
+                source=source,
+                retired=retired,
+            )
+            rejected.append("INTENT_EXPIRED")
+            skipped += 1
+            continue
         clock = _intent_clock(intent, now)
         if clock == "INTENT_EXPIRED":
-            _record_once(journal, symbol=intent.symbol, code=clock, intent_id=key, now=now)
-            if source is not None:
-                retired.add(source)
+            _close_intent(
+                journal,
+                intent,
+                code=clock,
+                state="INTENT_REJECTED",
+                now=now,
+                source=source,
+                retired=retired,
+            )
             rejected.append(clock)
             skipped += 1
             continue
@@ -1431,35 +1505,32 @@ def submit_once(
         blocked = intent.mode != "paper" or intent.live_size_multiplier is not None
         if code or blocked:
             reason = code or "LIVE_NOT_AUTHORIZED"
-            _record_once(journal, symbol=intent.symbol, code=reason, intent_id=key, now=now)
-            if source is not None:
-                kept.add(source)
+            _close_intent(
+                journal,
+                intent,
+                code=reason,
+                state="RISK_REJECTED",
+                now=now,
+                source=source,
+                retired=retired,
+            )
             rejected.append(reason)
             skipped += 1
             continue
-        opening = intent.intent_type in _OPENING
         missing_strategy = (
             not intent.strategy_id or intent.spec_hash is None or intent.strategy_version is None
         )
         if opening and missing_strategy:
-            _record_once(journal, symbol=intent.symbol, code="R25", intent_id=key, now=now)
-            if source is not None:
-                kept.add(source)
-            rejected.append("R25")
-            skipped += 1
-            continue
-        if (
-            intent.valid_from is None
-            and opening
-            and not intent.protective
-            and not intent.reduce_only
-        ):
-            _record_once(
-                journal, symbol=intent.symbol, code="INTENT_EXPIRED", intent_id=key, now=now
+            _close_intent(
+                journal,
+                intent,
+                code="R25",
+                state="RISK_REJECTED",
+                now=now,
+                source=source,
+                retired=retired,
             )
-            if source is not None:
-                retired.add(source)
-            rejected.append("INTENT_EXPIRED")
+            rejected.append("R25")
             skipped += 1
             continue
         approval["value"] = _file_approval(intent, context.approved_dir)

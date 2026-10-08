@@ -308,7 +308,7 @@ def test_fake_gateway_refetches_stale_quotes_and_does_not_stick_on_r22(
         assert stale["sent"] == 0
         assert "R22" in stale["rejected"]
         assert len(log["place"]) == 1
-        (tmp_path / "intents" / "n_stale_receipt.json").unlink()
+        (tmp_path / "intents" / "n_stale_receipt.json").unlink(missing_ok=True)
         monkeypatch.setattr(PaperGateway, "snapshot_quotes", real)
 
         clock["now"] = moment + timedelta(minutes=20)
@@ -358,7 +358,7 @@ def test_unreadable_pin_rejects_openings_and_still_sends_exits(
             result = submit_once(tmp_path, NOW, place=sent.append, readonly=False)
             assert sent == []
             assert "R25" in result["rejected"]
-            (tmp_path / "intents" / f"open-{label}.json").unlink()
+            (tmp_path / "intents" / f"open-{label}.json").unlink(missing_ok=True)
         pause = json.loads((tmp_path / "state" / "entry_pause.json").read_text(encoding="utf-8"))
         assert pause["pin_file"] is True
         critical = list((tmp_path / "logs").glob("critical_*.jsonl"))
