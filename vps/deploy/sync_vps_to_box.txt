@@ -1,0 +1,10 @@
+# VPS to box. One rsync path per line.
+backups/
+approvals/pending/
+notifications/outbox/
+alerts/sent/
+alerts/failed/
+logs/critical_*.jsonl
+state/
+reports/
+exports/

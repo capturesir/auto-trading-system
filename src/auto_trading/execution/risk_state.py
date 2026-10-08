@@ -32,6 +32,7 @@ def build_risk_limits(
     day_start_nlv: float | None = None,
     recon_freeze: bool = False,
     r0_violation: bool = False,
+    infra_pause: bool = False,
 ) -> dict[str, Any]:
     """One snapshot. ``trading_scope`` is fixed and is not hashed.
 
@@ -66,7 +67,7 @@ def build_risk_limits(
                     "r9_state": r9_state,
                     "kill_switch": kill_switch,
                     "recon_freeze": recon_freeze,
-                    "infra_pause": False,
+                    "infra_pause": infra_pause,
                     "paused_strategies": [],
                     "demoted_strategies": [],
                 },

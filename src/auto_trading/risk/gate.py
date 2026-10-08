@@ -152,6 +152,8 @@ class GateContext:
     unknown_symbols: frozenset[str] = frozenset()
     order_refs: frozenset[str] = frozenset()
     order_seq: int = 1
+    anomaly_breaker: bool = False
+    notify_failure: bool = False
 
 
 class RiskGate:
@@ -211,6 +213,10 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     if active:
         return "R11"
     reducing = intent.intent_type in REDUCING or intent.reduce_only or intent.protective
+    if intent.intent_type != "CANCEL" and not reducing:
+        paused_entry = _entry_pause(ctx)
+        if paused_entry:
+            return paused_entry
     if not reducing and window in {"open_buffer", "close_buffer"}:
         return "R10"
     if not reducing:
@@ -351,6 +357,23 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
         return "ABOVE_FAIR_VALUE"
     if intent.ref_price_at_create and abs(price / intent.ref_price_at_create - 1) > 0.10:
         return "STALE_REF"
+    return None
+
+
+def _entry_pause(ctx: GateContext) -> str | None:
+    """R29 and R30 block new entries on pre and on final. Exits are exempt."""
+    r29 = ctx.anomaly_breaker
+    r30 = ctx.notify_failure
+    if ctx.trading_home is not None:
+        from auto_trading.execution.breakers import flags
+
+        state = flags(ctx.trading_home)
+        r29 = r29 or bool(state.get("r29_active"))
+        r30 = r30 or bool(state.get("r30_active"))
+    if r29:
+        return "ANOMALY_BREAKER_ACTIVE"
+    if r30:
+        return "NOTIFY_FAILURE_PAUSE"
     return None
 
 

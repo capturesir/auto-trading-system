@@ -135,24 +135,6 @@ class TradeJournal:
                 BEGIN
                     SELECT RAISE(ABORT, 'risk_checks is append-only');
                 END;
-                CREATE TABLE IF NOT EXISTS approvals (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ts_utc TEXT NOT NULL,
-                    order_id TEXT NOT NULL,
-                    order_hash TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    detail_json TEXT NOT NULL
-                );
-                CREATE TRIGGER IF NOT EXISTS approvals_no_update
-                BEFORE UPDATE ON approvals
-                BEGIN
-                    SELECT RAISE(ABORT, 'approvals is append-only');
-                END;
-                CREATE TRIGGER IF NOT EXISTS approvals_no_delete
-                BEFORE DELETE ON approvals
-                BEGIN
-                    SELECT RAISE(ABORT, 'approvals is append-only');
-                END;
                 CREATE TABLE IF NOT EXISTS hwm_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     ts_utc TEXT NOT NULL,
@@ -193,7 +175,84 @@ class TradeJournal:
                 );
                 """
             )
+            self._create_approvals(conn)
+            self._create_ops_tables(conn)
             self._migrate_orders(conn)
+
+    def _create_approvals(self, conn: sqlite3.Connection) -> None:
+        """Approvals table. The check value is filled from the mode constant."""
+        from auto_trading.execution.approval_mode import APPROVER_AUTO
+
+        check = (
+            "CHECK (approver IS NULL OR approver <> '"
+            + APPROVER_AUTO
+            + "' OR json_extract(r0_check_json, '$.all_ok') = 1)"
+        )
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS approvals ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "ts_utc TEXT NOT NULL,"
+            "order_id TEXT NOT NULL,"
+            "order_hash TEXT NOT NULL,"
+            "status TEXT NOT NULL,"
+            "detail_json TEXT NOT NULL,"
+            "approver TEXT,"
+            "channel TEXT,"
+            "attempt INTEGER,"
+            "approval_price REAL,"
+            "r0_check_json TEXT,"
+            f"{check})"
+        )
+        conn.executescript(
+            """
+            CREATE TRIGGER IF NOT EXISTS approvals_no_update
+            BEFORE UPDATE ON approvals
+            BEGIN
+                SELECT RAISE(ABORT, 'approvals is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS approvals_no_delete
+            BEFORE DELETE ON approvals
+            BEGIN
+                SELECT RAISE(ABORT, 'approvals is append-only');
+            END;
+            """
+        )
+
+    def _create_ops_tables(self, conn: sqlite3.Connection) -> None:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS anomaly_order_counts (
+                risk_date TEXT NOT NULL,
+                order_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                PRIMARY KEY (risk_date, order_id)
+            );
+            CREATE TABLE IF NOT EXISTS b_alerts (
+                alert_id TEXT PRIMARY KEY,
+                dedup_key TEXT,
+                rule_id TEXT,
+                ticker TEXT,
+                severity TEXT,
+                received_at_utc TEXT,
+                forwarded_at_utc TEXT,
+                status TEXT,
+                outbox_file TEXT,
+                source TEXT
+            );
+            CREATE TABLE IF NOT EXISTS critical_events (
+                alert_id TEXT PRIMARY KEY,
+                event_id TEXT,
+                kind TEXT,
+                rule_id TEXT,
+                reason_code TEXT,
+                created_at_utc TEXT,
+                pending_file TEXT,
+                outbox_file TEXT,
+                forwarded_at_utc TEXT,
+                status TEXT
+            );
+            """
+        )
 
     def _migrate_orders(self, conn: sqlite3.Connection) -> None:
         """Add quote and protective columns on a journal created before them."""
@@ -456,17 +515,243 @@ class TradeJournal:
         status: str,
         detail: dict[str, Any] | None = None,
         when: datetime | None = None,
+        approver: str | None = None,
+        channel: str | None = None,
+        attempt: int | None = None,
+        approval_price: float | None = None,
+        r0_check: dict[str, Any] | None = None,
     ) -> None:
         ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
         with self._connect() as conn:
             conn.execute(
                 """
-                INSERT INTO approvals (ts_utc, order_id, order_hash, status, detail_json)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO approvals (
+                    ts_utc, order_id, order_hash, status, detail_json,
+                    approver, channel, attempt, approval_price, r0_check_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (ts, order_id, order_hash, status, json.dumps(detail or {}, ensure_ascii=False)),
+                (
+                    ts,
+                    order_id,
+                    order_hash,
+                    status,
+                    json.dumps(detail or {}, ensure_ascii=False),
+                    approver,
+                    channel,
+                    attempt,
+                    approval_price,
+                    None if r0_check is None else json.dumps(r0_check, ensure_ascii=False),
+                ),
             )
         self.audit("approval", {"order_id": order_id, "status": status}, when=when)
+
+    def note_counted_anomaly(self, risk_date: str, order_id: str, kind: str) -> bool:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO anomaly_order_counts (risk_date, order_id, kind)
+                VALUES (?, ?, ?)
+                """,
+                (risk_date, order_id, kind),
+            )
+            changed = conn.execute("SELECT changes()").fetchone()
+        return int(changed[0]) == 1
+
+    def counted_anomalies(self, risk_date: str) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM anomaly_order_counts WHERE risk_date = ?",
+                (risk_date,),
+            ).fetchone()
+        return int(row["n"])
+
+    def clear_counted_anomalies(self, risk_date: str) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM anomaly_order_counts WHERE risk_date = ?", (risk_date,))
+
+    def alert_seen(self, alert_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM b_alerts WHERE alert_id = ?",
+                (alert_id,),
+            ).fetchone()
+        return row is not None
+
+    def dedup_forwarded(self, dedup_key: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM b_alerts
+                WHERE dedup_key = ? AND status = 'forwarded'
+                """,
+                (dedup_key,),
+            ).fetchone()
+        return row is not None
+
+    def record_alert(
+        self,
+        *,
+        alert_id: str,
+        dedup_key: str,
+        source: str,
+        status: str,
+        when: datetime,
+        rule_id: str = "",
+        ticker: str = "",
+        severity: str = "",
+        outbox_file: str = "",
+    ) -> None:
+        ts = when.astimezone(UTC).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO b_alerts (
+                    alert_id, dedup_key, rule_id, ticker, severity,
+                    received_at_utc, forwarded_at_utc, status, outbox_file, source
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    alert_id,
+                    dedup_key,
+                    rule_id,
+                    ticker,
+                    severity,
+                    ts,
+                    ts if status == "forwarded" else None,
+                    status,
+                    outbox_file,
+                    source,
+                ),
+            )
+
+    def record_critical_event(
+        self,
+        *,
+        alert_id: str,
+        event_id: str,
+        kind: str,
+        rule_id: str,
+        reason_code: str,
+        created_at_utc: str,
+        pending_file: str,
+        outbox_file: str,
+        status: str,
+        when: datetime,
+    ) -> None:
+        ts = when.astimezone(UTC).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO critical_events (
+                    alert_id, event_id, kind, rule_id, reason_code,
+                    created_at_utc, pending_file, outbox_file, forwarded_at_utc, status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    alert_id,
+                    event_id,
+                    kind,
+                    rule_id,
+                    reason_code,
+                    created_at_utc,
+                    pending_file,
+                    outbox_file,
+                    ts,
+                    status,
+                ),
+            )
+
+    def summary_fills(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT o.order_id, o.symbol, o.quote_data_type, o.market_data_type,
+                       o.delay_sec, e.price, e.quantity, e.intent_id
+                FROM executions e
+                JOIN orders o ON o.intent_id = e.intent_id
+                WHERE e.ts_utc >= ? AND e.ts_utc < ?
+                """,
+                (
+                    start.astimezone(UTC).isoformat(timespec="seconds"),
+                    end.astimezone(UTC).isoformat(timespec="seconds"),
+                ),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def summary_rejections(self, start: datetime, end: datetime) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT intent_id, symbol, code, detail_json
+                FROM risk_checks
+                WHERE code IS NOT NULL AND ts_utc >= ? AND ts_utc < ?
+                """,
+                (
+                    start.astimezone(UTC).isoformat(timespec="seconds"),
+                    end.astimezone(UTC).isoformat(timespec="seconds"),
+                ),
+            ).fetchall()
+        found = []
+        for row in rows:
+            item = dict(row)
+            item["detail"] = json.loads(item.pop("detail_json") or "{}")
+            found.append(item)
+        return found
+
+    def summary_submitted(self, start: datetime, end: datetime) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT COUNT(DISTINCT order_id) AS n FROM order_events
+                WHERE state = 'SUBMITTED' AND ts_utc >= ? AND ts_utc < ?
+                """,
+                (
+                    start.astimezone(UTC).isoformat(timespec="seconds"),
+                    end.astimezone(UTC).isoformat(timespec="seconds"),
+                ),
+            ).fetchone()
+        return int(row["n"])
+
+    def summary_approvals(self, start: datetime, end: datetime) -> dict[str, int]:
+        from auto_trading.execution.approval_mode import APPROVER_AUTO
+
+        start_s = start.astimezone(UTC).isoformat(timespec="seconds")
+        end_s = end.astimezone(UTC).isoformat(timespec="seconds")
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT approver, attempt FROM approvals
+                WHERE ts_utc >= ? AND ts_utc < ?
+                """,
+                (start_s, end_s),
+            ).fetchall()
+            chase = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM risk_checks
+                WHERE code = 'CHASE_REAPPROVAL_EXCEEDED' AND ts_utc >= ? AND ts_utc < ?
+                """,
+                (start_s, end_s),
+            ).fetchone()
+            expired = conn.execute(
+                """
+                SELECT COUNT(*) AS n FROM risk_checks
+                WHERE code = 'APPROVAL_EXPIRED' AND ts_utc >= ? AND ts_utc < ?
+                """,
+                (start_s, end_s),
+            ).fetchone()
+        auto = sum(1 for row in rows if row["approver"] == APPROVER_AUTO and row["attempt"] == 1)
+        reapproved = sum(1 for row in rows if row["attempt"] == 2)
+        user = sum(1 for row in rows if row["approver"] == "user")
+        return {
+            "auto": auto,
+            "reapproved": reapproved,
+            "user": user,
+            "chase": int(chase["n"]),
+            "expired": int(expired["n"]),
+        }
 
     def record_hwm(
         self,

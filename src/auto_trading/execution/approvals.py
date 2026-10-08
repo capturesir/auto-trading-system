@@ -29,6 +29,22 @@ def order_hash(payload: dict[str, Any]) -> str:
     return sha256_prefixed(payload)
 
 
+def signed_body(
+    payload: dict[str, Any],
+    *,
+    order_id: str,
+    approval_price: float,
+    attempt: int,
+) -> dict[str, Any]:
+    """Fields bound into the approval hash. Approval metadata stays outside."""
+    return {
+        **payload,
+        "order_id": order_id,
+        "approval_price": approval_price,
+        "attempt": attempt,
+    }
+
+
 def hash12(digest: str) -> str:
     return digest.removeprefix("sha256:")[:12]
 
@@ -57,6 +73,10 @@ def queue_order(trading_home: Path, order_id: str, payload: dict[str, Any]) -> P
     return target
 
 
+def _decided_path(trading_home: Path, order_id: str) -> Path:
+    return trading_home / "approvals" / "decided" / f"{order_id}.json"
+
+
 def approve(
     trading_home: Path,
     order_id: str,
@@ -69,6 +89,14 @@ def approve(
     """Recompute the order hash, enforce the 120-minute timeout, and audit it."""
     if not by or not channel:
         raise ApprovalError("approval needs by and channel")
+    decided = _decided_path(trading_home, order_id)
+    if decided.is_file():
+        existing = json.loads(decided.read_text(encoding="utf-8"))
+        from auto_trading.execution.approval_mode import APPROVER_AUTO
+
+        if existing.get("approver") == APPROVER_AUTO:
+            raise ApprovalError("already approved automatically")
+        raise ApprovalError("already decided")
     source = trading_home / "approvals" / "pending" / f"{order_id}.json"
     if not source.is_file():
         raise ApprovalError("missing pending order")
@@ -96,6 +124,9 @@ def approve(
         status="APPROVED",
         detail={"given_hash": given_hash, "by": by, "channel": channel},
         when=moment,
+        approver="user",
+        channel=channel,
+        attempt=1,
     )
     folder = trading_home / "approvals" / "decided"
     folder.mkdir(parents=True, exist_ok=True)
@@ -103,6 +134,56 @@ def approve(
     temporary = target.with_suffix(".json.tmp")
     text = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
     temporary.write_text(text, encoding="utf-8")
+    os.replace(temporary, target)
+    source.unlink()
+    return document
+
+
+def list_pending(trading_home: Path) -> list[dict[str, Any]]:
+    folder = trading_home / "approvals" / "pending"
+    if not folder.is_dir():
+        return []
+    rows = []
+    for path in sorted(folder.glob("*.json")):
+        rows.append(json.loads(path.read_text(encoding="utf-8")))
+    return rows
+
+
+def decline(
+    trading_home: Path,
+    order_id: str,
+    *,
+    by: str,
+    channel: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Refuse a manual pending order. Automatic approvals are not declined here."""
+    source = trading_home / "approvals" / "pending" / f"{order_id}.json"
+    if not source.is_file():
+        raise ApprovalError("missing pending order")
+    document = json.loads(source.read_text(encoding="utf-8"))
+    moment = now or datetime.now(UTC)
+    document["status"] = "DECLINED"
+    document["decided_at"] = moment.isoformat(timespec="seconds")
+    document["approved_by"] = by
+    document["channel"] = channel
+    TradeJournal(trading_home).record_approval(
+        order_id=order_id,
+        order_hash=str(document.get("order_hash") or ""),
+        status="DECLINED",
+        detail={"by": by, "channel": channel},
+        when=moment,
+        approver="user",
+        channel=channel,
+    )
+    folder = trading_home / "approvals" / "decided"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{order_id}.json"
+    temporary = target.with_suffix(".json.tmp")
+    temporary.write_text(
+        json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
     os.replace(temporary, target)
     source.unlink()
     return document

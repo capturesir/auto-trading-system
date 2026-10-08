@@ -10,6 +10,7 @@ modifications, disconnects, latches a full stop, and still allows cancels.
 
 from __future__ import annotations
 
+import contextlib
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -98,7 +99,29 @@ def latch_kill_switch(trading_home: Path, code: str) -> None:
     """Full stop used by an R0 violation. Cancels are not blocked by this file."""
     trading_home.mkdir(parents=True, exist_ok=True)
     (trading_home / "KILL_SWITCH").write_text(code + "\n", encoding="utf-8")
+    with contextlib.suppress(Exception):
+        TradeJournal(trading_home).record_anomaly(kind="R0_VIOLATION", detail={"code": code})
     try:
-        TradeJournal(trading_home).record_anomaly(kind=code, detail={"code": code})
+        from datetime import UTC, datetime
+
+        from auto_trading.alerts.critical import HINT_FULL_STOP, write_critical_event
+
+        write_critical_event(
+            trading_home,
+            kind="r0_violation",
+            reason_code=code,
+            rule_id="R0",
+            now=datetime.now(UTC),
+            account=paper_account_pin(),
+            message_zh="模擬帳戶檢查失敗，已全停並斷線。",
+            resume_hint=HINT_FULL_STOP,
+            actions={
+                "kill_switch_file": True,
+                "open_orders_cancelled": False,
+                "protective_stops_kept": True,
+                "disconnected": True,
+                "strategies_halted": True,
+            },
+        )
     except Exception:
         return

@@ -51,6 +51,18 @@ def _write_runtime(home: Path, status: str) -> None:
     )
 
 
+def _emit_critical(home: Path, payload: dict) -> None:
+    """Write the critical event after the stop. A write error leaves the stop in place."""
+    try:
+        from datetime import datetime
+
+        from auto_trading.alerts.critical import write_critical_event
+
+        write_critical_event(home, now=datetime.now(UTC), **payload)
+    except Exception:
+        return
+
+
 def stop(home: Path) -> None:
     """Full stop: latch the file, cancel working orders, halt the runtime."""
     home.mkdir(parents=True, exist_ok=True)
@@ -59,6 +71,54 @@ def stop(home: Path) -> None:
     journal = TradeJournal(home)
     cancelled = journal.cancel_unfilled_orders()
     journal.audit("stop", {"strategy_runtime": _HALTED, "cancelled": cancelled})
+    from auto_trading.alerts.critical import HINT_FULL_STOP
+
+    _emit_critical(
+        home,
+        {
+            "kind": "r18_stop",
+            "reason_code": "R18",
+            "rule_id": "R18",
+            "message_zh": "已手動全停。",
+            "resume_hint": HINT_FULL_STOP,
+            "actions": {
+                "kill_switch_file": True,
+                "open_orders_cancelled": True,
+                "protective_stops_kept": True,
+                "disconnected": False,
+                "strategies_halted": True,
+            },
+        },
+    )
+
+
+def halt_r9(home: Path) -> None:
+    """Drawdown halt. The critical event is written only after the stop files exist."""
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "KILL_SWITCH").write_text("R9\n", encoding="utf-8")
+    _write_runtime(home, _HALTED)
+    journal = TradeJournal(home)
+    cancelled = journal.cancel_unfilled_orders()
+    journal.audit("r9_halt", {"cancelled": cancelled})
+    from auto_trading.alerts.critical import HINT_FULL_STOP
+
+    _emit_critical(
+        home,
+        {
+            "kind": "r9_halt",
+            "reason_code": "R9",
+            "rule_id": "R9",
+            "message_zh": "回撤達到全停門檻。",
+            "resume_hint": HINT_FULL_STOP,
+            "actions": {
+                "kill_switch_file": True,
+                "open_orders_cancelled": True,
+                "protective_stops_kept": True,
+                "disconnected": False,
+                "strategies_halted": True,
+            },
+        },
+    )
 
 
 def pause(home: Path) -> None:
@@ -76,8 +136,14 @@ def interactive_local_session() -> None:
         raise PermissionError("kill switch requires an interactive terminal on the host")
 
 
+def _synced_resume(home: Path) -> None:
+    if (home / "state" / "resume.request").is_file():
+        raise PermissionError("synced resume is refused")
+
+
 def resume(home: Path, *, reset_hwm: bool, local_terminal: bool, confirm: str) -> str:
     """Clear the kill switch. Refuses a remote caller or a missing phrase."""
+    _synced_resume(home)
     if not local_terminal:
         raise PermissionError("kill switch can only be reset locally")
     if confirm != CONFIRM_PHRASE:
@@ -109,7 +175,70 @@ def resume(home: Path, *, reset_hwm: bool, local_terminal: bool, confirm: str) -
     if switch.exists():
         switch.unlink()
     _write_runtime(home, _WORKING)
+    try:
+        from datetime import datetime
+
+        from auto_trading.alerts.critical import write_ops_notice
+
+        write_ops_notice(home, message_zh="全停已在本機解除。", now=datetime.now(UTC))
+    except Exception:
+        pass
     return "resumed"
+
+
+def resume_r29(home: Path, *, local_terminal: bool, confirm: str) -> str:
+    """Clear R29 only. This does not clear a full stop."""
+    _synced_resume(home)
+    if not local_terminal:
+        raise PermissionError("kill switch can only be reset locally")
+    if confirm != CONFIRM_PHRASE:
+        raise PermissionError("resume requires the confirmation phrase")
+    interactive_local_session()
+    if TradeJournal(home).unknown_orders():
+        raise PermissionError("unresolved UNKNOWN order")
+    from datetime import datetime
+
+    from auto_trading.execution.breakers import clear_r29
+
+    clear_r29(home, datetime.now(UTC))
+    return "r29 cleared"
+
+
+def describe_approval(home: Path) -> tuple[str, str]:
+    """Current approval mode from a fresh account file, not a startup cache."""
+    path = home / "state" / "approval_session.json"
+    if not path.is_file():
+        return "manual", "accounts_unavailable"
+    from auto_trading.config import get_settings, manual_forced
+    from auto_trading.execution.approval_mode import (
+        ApprovalSession,
+        approval_block_reason,
+        decide_approval_mode,
+    )
+
+    def accounts() -> tuple[str, ...]:
+        fresh = json.loads(path.read_text(encoding="utf-8"))
+        return tuple(fresh.get("accounts") or [])
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    settings = get_settings()
+    pin = settings.ibkr_paper_account or str(payload.get("pin") or "")
+    session = ApprovalSession(
+        read_accounts=accounts,
+        port=int(payload.get("port") or settings.ibkr_port),
+        pin=pin,
+        baseline=tuple(payload.get("baseline") or []),
+        kill_switch_present=lambda: (home / "KILL_SWITCH").is_file(),
+        r0_violation=lambda: bool(payload.get("r0_violation")),
+        force_manual=lambda: manual_forced(os.environ.get("FORCE_MANUAL_APPROVAL", "false")),
+        strategy_approval=lambda: str(payload.get("strategy_approval") or "manual"),
+    )
+
+    class _Order:
+        account = pin
+        execution_approval = None
+
+    return decide_approval_mode(_Order(), session), approval_block_reason(_Order(), session)
 
 
 def status_text(home: Path, now) -> str:
@@ -118,14 +247,24 @@ def status_text(home: Path, now) -> str:
     gap = heartbeat_gap(home / "state" / "heartbeat.json", now)
     alert = heartbeat_alert_due(home / "state" / "heartbeat.json", now)
     account = _account(home)
+    mode, reason = describe_approval(home)
+    from auto_trading.alerts.forwarder import status_warning, unforwarded_critical
+
+    count, _late = unforwarded_critical(home, now)
+    warn = status_warning(home, now)
     return (
         f"kill_switch={killed} paused={paused} heartbeat_alert={alert} "
-        f"gap_sec={None if gap is None else int(gap.total_seconds())} nlv={account.get('nlv')}"
+        f"gap_sec={None if gap is None else int(gap.total_seconds())} nlv={account.get('nlv')} "
+        f"approval={mode} approval_reason={reason} unforwarded_critical={count} "
+        f"critical_warn={'yes' if warn else 'no'}"
     )
 
 
 def main(argv: list[str] | None = None) -> None:
     """Entry point for ``trade`` and ``auto-trading trade``."""
+    from auto_trading.config import assert_startup_switches
+
+    assert_startup_switches()
     parser = argparse.ArgumentParser(prog="trade")
     parser.add_argument("--home", default=None)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -134,7 +273,13 @@ def main(argv: list[str] | None = None) -> None:
     approve_cmd.add_argument("--hash", required=True)
     approve_cmd.add_argument("--by", required=True)
     approve_cmd.add_argument("--channel", required=True)
+    sub.add_parser("pending")
+    decline_cmd = sub.add_parser("decline")
+    decline_cmd.add_argument("order_id")
+    decline_cmd.add_argument("--by", required=True)
+    decline_cmd.add_argument("--channel", required=True)
     sub.add_parser("status")
+    sub.add_parser("digest")
     sub.add_parser("pos")
     sub.add_parser("pnl")
     why = sub.add_parser("why")
@@ -145,6 +290,7 @@ def main(argv: list[str] | None = None) -> None:
     resume_cmd.add_argument("--reset-hwm", action="store_true")
     resume_cmd.add_argument("--local", action="store_true")
     resume_cmd.add_argument("--confirm", default="")
+    resume_cmd.add_argument("--breaker", default="")
     args = parser.parse_args(argv)
     home = _home(args.home)
     if args.command == "approve":
@@ -160,6 +306,34 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(str(exc)) from exc
         print(document["status"])
         return
+    if args.command == "pending":
+        from auto_trading.execution.approvals import list_pending
+
+        print(json.dumps(list_pending(home), ensure_ascii=False))
+        return
+    if args.command == "decline":
+        from auto_trading.execution.approvals import decline
+
+        try:
+            document = decline(home, args.order_id, by=args.by, channel=args.channel)
+        except ApprovalError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(document["status"])
+        return
+    if args.command == "digest":
+        from datetime import datetime
+
+        from auto_trading.config import get_settings
+        from auto_trading.reports.daily_summary import write_daily_summary
+
+        payload = write_daily_summary(
+            home,
+            now=datetime.now(UTC),
+            complete=True,
+            pin=get_settings().ibkr_paper_account,
+        )
+        print(payload["risk_date"])
+        return
     if args.command == "stop":
         stop(home)
         print("stopped")
@@ -170,14 +344,27 @@ def main(argv: list[str] | None = None) -> None:
         return
     if args.command == "resume":
         try:
-            print(
-                resume(
-                    home,
-                    reset_hwm=args.reset_hwm,
-                    local_terminal=args.local,
-                    confirm=args.confirm,
+            if args.breaker == "R30":
+                raise PermissionError("R30 clears only when notifications recover")
+            if args.breaker == "R29":
+                print(
+                    resume_r29(
+                        home,
+                        local_terminal=args.local,
+                        confirm=args.confirm,
+                    )
                 )
-            )
+            elif args.breaker:
+                raise PermissionError("unknown breaker")
+            else:
+                print(
+                    resume(
+                        home,
+                        reset_hwm=args.reset_hwm,
+                        local_terminal=args.local,
+                        confirm=args.confirm,
+                    )
+                )
         except PermissionError as exc:
             raise SystemExit(str(exc)) from exc
         return

@@ -7,6 +7,8 @@ names. Those belong to the separate IBC launcher.
 
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -19,6 +21,28 @@ from auto_trading.paper_account import DU_ACCOUNT
 DEFAULT_SIGNALS_PATH = Path("/workspace/invest/signals.json")
 DEFAULT_DATABASE_PATH = Path("data/auto_trading.sqlite")
 DEFAULT_TRADING_HOME = Path("/workspace/trading")
+_REMOVED_APPROVAL_SWITCH = "PAPER_AUTO_APPROVE"
+
+
+def manual_forced(value: str | bool | None) -> bool:
+    """True only for the boolean or the text ``true``. Other values stay off."""
+    if isinstance(value, bool):
+        return value
+    return str(value or "").strip().lower() == "true"
+
+
+def assert_startup_switches(
+    env: Mapping[str, str] | None = None,
+    config_text: str = "",
+    config_path: Path | None = None,
+) -> None:
+    """Refuse a process that still names the removed approval switch."""
+    current = os.environ if env is None else env
+    text = config_text
+    if config_path is not None and config_path.is_file():
+        text += config_path.read_text(encoding="utf-8")
+    if _REMOVED_APPROVAL_SWITCH in current or _REMOVED_APPROVAL_SWITCH in text:
+        raise SystemExit(f"{_REMOVED_APPROVAL_SWITCH} was removed and cannot enable approval")
 
 
 class Settings(BaseSettings):
@@ -53,6 +77,10 @@ class Settings(BaseSettings):
     )
     trading_home: Path = Field(default=DEFAULT_TRADING_HOME)
     base_currency: Literal["HKD", "USD"] = "HKD"
+    force_manual_approval: str = Field(
+        default="false",
+        validation_alias=AliasChoices("FORCE_MANUAL_APPROVAL"),
+    )
 
     @field_validator("ibkr_port")
     @classmethod
@@ -75,4 +103,5 @@ class Settings(BaseSettings):
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return cached settings built from the current environment."""
+    assert_startup_switches()
     return Settings()

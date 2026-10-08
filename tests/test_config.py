@@ -102,6 +102,7 @@ def test_env_example_lists_names_only() -> None:
         "IB_CLIENT_ID_REPORT",
         "TRADING_HOME",
         "BASE_CURRENCY",
+        "FORCE_MANUAL_APPROVAL",
     ]
 
 
