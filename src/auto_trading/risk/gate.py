@@ -386,13 +386,31 @@ def _price(intent: OrderIntent, ctx: GateContext) -> float | None:
     return quote.last
 
 
+def _fx_rate(ctx: GateContext, currency: str) -> float | None:
+    """HKD per one unit. HKD defaults to 1. Any other missing rate is refused."""
+    raw = ctx.fx_to_base.get(currency)
+    if currency == "HKD" and raw is None:
+        raw = 1.0
+    if raw is None:
+        return None
+    try:
+        rate = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if rate <= 0:
+        return None
+    return rate
+
+
 def _notional(intent: OrderIntent, ctx: GateContext) -> float | None:
     price = _price(intent, ctx)
     if price is None:
         return None
     currency = intent.currency or map_contract(intent.symbol).currency
-    fx = ctx.fx_to_base.get(currency, 1.0)
-    return intent.quantity * price * fx
+    rate = _fx_rate(ctx, currency)
+    if rate is None:
+        return None
+    return intent.quantity * price * rate
 
 
 def _cycle_view(ctx: GateContext) -> dict[str, Any] | None:
@@ -448,6 +466,11 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
     drawdown = ctx.nlv / ctx.hwm - 1 if ctx.hwm else 0.0
     if drawdown <= float(ctx.limits["R9_drawdown_halt_pct"]):
         return "R9_HALTED_COOLDOWN"
+    price = _price(intent, ctx) or 0.0
+    currency = intent.currency or map_contract(intent.symbol).currency
+    rate = _fx_rate(ctx, currency)
+    if rate is None:
+        return "R17"
     notional = _notional(intent, ctx)
     if notional is None:
         return "R22"
@@ -455,9 +478,7 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
     cash_cap = float(ctx.limits["R2_max_order_notional_base"])
     cap = min(pct_cap, cash_cap)
     scaled_cap = cap * size_mult
-    price = _price(intent, ctx) or 0.0
-    currency = intent.currency or map_contract(intent.symbol).currency
-    fx = ctx.fx_to_base.get(currency, 1.0)
+    fx = rate
     lot = intent.lot_size or map_contract(intent.symbol).lot_size
     lot_notional = lot * price * fx
     if lot_notional > cap + 1e-6:
@@ -690,9 +711,17 @@ def _held_currency(row: Held) -> str:
 
 
 def _base_value(row: Held, fx: dict[str, float]) -> float:
-    """Position value in HKD. Local currency is converted with ``fx``."""
+    """Position value in HKD. A missing non-HKD rate does not become 1."""
     if row.market_value_local is not None:
-        return row.market_value_local * fx.get(_held_currency(row), 1.0)
+        currency = _held_currency(row)
+        if currency == "HKD":
+            rate = float(fx.get("HKD", 1.0))
+        else:
+            raw = fx.get(currency)
+            if raw is None or float(raw) <= 0:
+                return float("inf")
+            rate = float(raw)
+        return row.market_value_local * rate
     return row.market_value_base
 
 

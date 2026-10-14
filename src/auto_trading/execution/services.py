@@ -506,6 +506,15 @@ def account_once(
         "open_orders": list(data.get("open_orders") or []),
         "gateway_logged_in": True,
     }
+    if "cash" in data:
+        payload["cash"] = None if data.get("cash") is None else float(data["cash"])
+    fx_raw = data.get("fx_to_base")
+    if isinstance(fx_raw, dict) and fx_raw:
+        from auto_trading.execution.fx import store_rates
+
+        fx_saved = {str(key): float(value) for key, value in fx_raw.items()}
+        payload["fx_to_base"] = fx_saved
+        store_rates(home, fx_saved)
     _write_json(home / "state" / "account.json", payload)
     quotes = data.get("quotes")
     if isinstance(quotes, list) and quotes:
@@ -954,9 +963,12 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
     offset = row.get("limit_offset_bps", envelope.get("limit_offset_bps"))
     ref_price = row.get("ref_price_at_create", envelope.get("ref_price_at_create"))
     cap = row.get("limit_price_cap", envelope.get("limit_price_cap"))
+    protective = bool(row.get("protective", envelope.get("protective", False)))
     valid_from = _parse_time(row.get("valid_from", envelope.get("valid_from")))
     if _has_valid_from(row, envelope) and valid_from is None:
         valid_from = datetime(1970, 1, 1, tzinfo=UTC)
+    if protective:
+        valid_from = None
     parent = row.get("parent_intent_id", envelope.get("parent_intent_id"))
     return OrderIntent(
         client_id=str(row.get("client_id") or intent_id),
@@ -980,7 +992,7 @@ def _row_intent(row: dict[str, Any], envelope: dict[str, Any]) -> OrderIntent | 
         limit_price_cap=None if cap is None else _number(cap),
         ref_price_at_create=None if ref_price is None else _number(ref_price),
         valid_from=valid_from,
-        protective=bool(row.get("protective", envelope.get("protective", False))),
+        protective=protective,
         reduce_only=bool(row.get("reduce_only", envelope.get("reduce_only", False))),
     )
 
@@ -1087,6 +1099,225 @@ def _refresh_quotes(home: Path, now: datetime, symbols: list[str]) -> dict[str, 
     return load_quotes(home)
 
 
+def _canonical_symbol(symbol: str, *, currency: str = "", exchange: str = "") -> str:
+    """Fold a broker symbol onto the ticker the intent uses.
+
+    ``700`` with HKD or SEHK, and a bare short number, become ``0700.HK``.
+    A priced currency other than HKD is left unchanged.
+    """
+    text = str(symbol).strip()
+    if text.upper().endswith(".HK"):
+        return _hk_key(text) or text
+    folded = _hk_key(text)
+    ccy = currency.upper()
+    exch = exchange.upper()
+    if folded is None:
+        return text
+    if ccy in {"USD", "JPY", "KRW", "TWD"}:
+        return text
+    if ccy == "HKD" or exch in {"SEHK", "HK"} or (ccy == "" and exch == ""):
+        return folded
+    return text
+
+
+def _scale_strategies(attributions: dict[str, float], broker_qty: float) -> dict[str, float]:
+    """Strategy quantities cannot add up to more than the broker position."""
+    positive = {key: qty for key, qty in attributions.items() if qty > 1e-9}
+    total = sum(positive.values())
+    if total <= broker_qty + 1e-9:
+        return positive
+    if total <= 0:
+        return {}
+    scaled: dict[str, float] = {}
+    for key, qty in positive.items():
+        scaled[key] = qty * broker_qty / total
+    return scaled
+
+
+def _gate_positions(
+    home: Path,
+    account: dict[str, Any],
+    quotes: dict[str, Any],
+    fx: dict[str, float],
+) -> tuple[list[Any], bool]:
+    """Broker quantity, journal strategy split, marked with quote times FX.
+
+    The second value is True when a holding could not be priced.
+    """
+    from auto_trading.portfolio.journal import TradeJournal
+    from auto_trading.risk.gate import GateContext as _Ctx
+    from auto_trading.risk.gate import Held, _fx_rate
+
+    broker_rows = [row for row in account.get("positions") or [] if isinstance(row, dict)]
+    broker_qty: dict[str, float] = {}
+    broker_ccy: dict[str, str] = {}
+    explicit: dict[str, dict[str, float]] = {}
+    for row in broker_rows:
+        raw = str(row.get("symbol") or row.get("ticker") or "")
+        if not raw:
+            continue
+        symbol = _canonical_symbol(
+            raw,
+            currency=str(row.get("currency") or ""),
+            exchange=str(row.get("exchange") or ""),
+        )
+        qty = float(row.get("qty") or row.get("quantity") or 0)
+        broker_qty[symbol] = broker_qty.get(symbol, 0.0) + qty
+        if row.get("currency"):
+            broker_ccy[symbol] = str(row["currency"])
+        strategy = row.get("strategy_id")
+        if strategy and qty > 0:
+            book = explicit.setdefault(symbol, {})
+            book[str(strategy)] = book.get(str(strategy), 0.0) + qty
+    journal_book: dict[str, dict[str, float]] = {}
+    try:
+        rows = TradeJournal(home).strategy_position_rows()
+    except (OSError, sqlite3.Error):
+        rows = []
+    for row in rows:
+        symbol = _canonical_symbol(str(row.get("ticker") or ""))
+        qty = float(row.get("qty") or 0)
+        strategy = str(row.get("strategy_id") or "")
+        if not symbol or not strategy or qty <= 0:
+            continue
+        book = journal_book.setdefault(symbol, {})
+        book[strategy] = book.get(strategy, 0.0) + qty
+    probe = _Ctx(fx_to_base=fx)
+    held: list[Held] = []
+    unpriced = False
+    for symbol, qty in broker_qty.items():
+        if qty <= 1e-9:
+            continue
+        attributions = journal_book.get(symbol) or explicit.get(symbol) or {}
+        scaled = _scale_strategies(attributions, qty)
+        assigned = sum(scaled.values())
+        slices: list[tuple[str | None, float]] = list(scaled.items())
+        if qty - assigned > 1e-6:
+            slices.append((None, qty - assigned))
+        if not slices:
+            slices.append((None, qty))
+        quote = quotes.get(symbol)
+        price = None if quote is None else quote.last
+        currency = broker_ccy.get(symbol) or ""
+        if not currency:
+            try:
+                from auto_trading.execution.contracts import map_contract
+
+                currency = map_contract(symbol).currency
+            except Exception:
+                currency = "HKD"
+        rate = _fx_rate(probe, currency)
+        if price is None or price <= 0 or rate is None:
+            unpriced = True
+            value = 0.0
+        else:
+            value = price * rate
+        for strategy_id, part in slices:
+            held.append(
+                Held(
+                    symbol,
+                    part,
+                    value * part,
+                    strategy_id=strategy_id,
+                    currency=currency,
+                )
+            )
+    return held, unpriced
+
+
+def _notional_base(
+    symbol: str,
+    qty: float,
+    price: float,
+    currency: str,
+    fx: dict[str, float],
+) -> float:
+    """HKD notional. A missing non-HKD rate is infinite so the gate fails closed."""
+    from auto_trading.risk.gate import GateContext, _fx_rate
+
+    ccy = currency
+    if not ccy:
+        try:
+            from auto_trading.execution.contracts import map_contract
+
+            ccy = map_contract(symbol).currency
+        except Exception:
+            ccy = "HKD"
+    rate = _fx_rate(GateContext(fx_to_base=fx), ccy)
+    if qty <= 0 or price <= 0:
+        return 0.0
+    if rate is None:
+        return float("inf")
+    return qty * price * rate
+
+
+def _gate_open_orders(
+    home: Path,
+    account: dict[str, Any],
+    quotes: dict[str, Any],
+    fx: dict[str, float],
+) -> tuple[list[Any], frozenset[str]]:
+    """Journal working orders plus the broker snapshot. Same id is kept once."""
+    from auto_trading.portfolio.journal import TradeJournal
+    from auto_trading.risk.gate import OpenOrder
+
+    merged: dict[str, OpenOrder] = {}
+    refs: set[str] = set()
+    try:
+        details = TradeJournal(home).working_order_details()
+    except (OSError, sqlite3.Error):
+        details = []
+    for row in details:
+        symbol = _canonical_symbol(str(row["symbol"]))
+        order_id = str(row["order_id"])
+        qty = float(row["qty"] or 0)
+        quote = quotes.get(symbol)
+        price = 0.0 if quote is None else float(quote.last or 0)
+        merged[order_id] = OpenOrder(
+            intent_id=str(row["intent_id"]),
+            symbol=symbol,
+            side=str(row["side"] or ""),
+            quantity=qty,
+            protective=bool(row["protective"]),
+            active=True,
+            strategy_id=row.get("strategy_id"),
+            notional_base=_notional_base(symbol, qty, price, "", fx),
+        )
+        refs.add(order_id)
+    for row in account.get("open_orders") or []:
+        if not isinstance(row, dict):
+            continue
+        order_id = str(row.get("order_id") or "")
+        raw = str(row.get("symbol") or "")
+        if not raw:
+            continue
+        currency = str(row.get("currency") or "")
+        symbol = _canonical_symbol(
+            raw,
+            currency=currency,
+            exchange=str(row.get("exchange") or ""),
+        )
+        qty = float(row.get("qty") or row.get("quantity") or 0)
+        if order_id and order_id in merged:
+            refs.add(order_id)
+            continue
+        key = order_id or f"broker:{symbol}:{row.get('side')}:{qty}"
+        quote = quotes.get(symbol)
+        price = 0.0 if quote is None else float(quote.last or 0)
+        merged[key] = OpenOrder(
+            intent_id=str(row.get("intent_id") or ""),
+            symbol=symbol,
+            side=str(row.get("side") or ""),
+            quantity=qty,
+            active=True,
+            notional_base=_notional_base(symbol, qty, price, currency, fx),
+            currency=currency,
+        )
+        if order_id:
+            refs.add(order_id)
+    return list(merged.values()), frozenset(refs)
+
+
 def _production_context(
     home: Path,
     now: datetime,
@@ -1094,8 +1325,8 @@ def _production_context(
     symbols: list[str] | None = None,
 ) -> GateContext:
     """Risk snapshot from the local files. Missing broker data fails closed."""
+    from auto_trading.execution.fx import load_rates
     from auto_trading.execution.risk_state import verify_risk_limits_file
-    from auto_trading.risk.gate import Held
     from auto_trading.risk.limits import EXPECTED_LIMITS
 
     account = _account(home)
@@ -1118,18 +1349,28 @@ def _production_context(
         limits = verify_risk_limits_file(home)
     except Exception:
         limits = dict(EXPECTED_LIMITS)
-    positions: list[Held] = []
-    for row in account.get("positions") or []:
-        if isinstance(row, dict) and row.get("symbol"):
-            strategy = row.get("strategy_id")
-            positions.append(
-                Held(
-                    str(row["symbol"]),
-                    float(row.get("qty") or 0),
-                    0.0,
-                    strategy_id=str(strategy) if strategy else None,
-                )
-            )
+    fx = load_rates(home, account)
+    wanted = list(symbols or [])
+    for row in list(account.get("positions") or []) + list(account.get("open_orders") or []):
+        if not isinstance(row, dict):
+            continue
+        raw = str(row.get("symbol") or row.get("ticker") or "")
+        if not raw:
+            continue
+        folded = _canonical_symbol(
+            raw,
+            currency=str(row.get("currency") or ""),
+            exchange=str(row.get("exchange") or ""),
+        )
+        if folded not in wanted:
+            wanted.append(folded)
+    quotes = _refresh_quotes(home, now, wanted)
+    positions, unpriced = _gate_positions(home, account, quotes, fx)
+    open_orders, order_refs = _gate_open_orders(home, account, quotes, fx)
+    cash_missing = "cash" in account and account.get("cash") is None
+    cash = nlv
+    if "cash" in account and account.get("cash") is not None:
+        cash = float(account["cash"])
     recon_ok = True
     recon_path = home / "state" / "recon.json"
     if recon_path.is_file():
@@ -1137,26 +1378,29 @@ def _production_context(
             recon_ok = not bool(json.loads(recon_path.read_text(encoding="utf-8")).get("freeze"))
         except (OSError, json.JSONDecodeError):
             recon_ok = False
-    connected = bool(account.get("gateway_logged_in")) and _account_is_fresh(account, now)
+    fresh = bool(account.get("gateway_logged_in")) and _account_is_fresh(account, now)
+    connected = fresh and not unpriced and not cash_missing
     return GateContext(
         port=_port() or 4002,
         accounts=accounts,
         expected_account=pin,
         baseline_accounts=accounts,
         nlv=nlv,
-        cash=float(account.get("cash") or nlv),
+        cash=cash,
         hwm=float(account.get("hwm") or nlv),
         day_start_nlv=float(account.get("day_start_nlv") or nlv),
         limits=limits,
         positions=positions,
+        open_orders=open_orders,
+        order_refs=order_refs,
         now=now,
         kill_switch=(home / "KILL_SWITCH").is_file(),
         recon_ok=recon_ok,
         connected=connected,
         trading_home=home,
         approved_dir=_strategies_root(home),
-        fx_to_base={"HKD": 1.0},
-        quotes=_refresh_quotes(home, now, list(symbols or [])),
+        fx_to_base=fx,
+        quotes=quotes,
     )
 
 
@@ -1283,6 +1527,7 @@ def _journal_then_send(
         seq=1,
         symbol=intent.symbol,
         intent_type=intent.intent_type,
+        protective=intent.protective,
     )
     journal.set_order_state(order_id, "SUBMITTING", when=now)
     wire = intent.model_copy(deep=True)
@@ -1303,7 +1548,12 @@ def _stamp_quote(intent: OrderIntent, ctx: GateContext) -> None:
 
 
 def _intent_clock(intent: OrderIntent, now: datetime) -> str | None:
-    """``INTENT_EXPIRED`` after that session's close. Not-yet-valid is not sent."""
+    """``INTENT_EXPIRED`` after that session's close. Not-yet-valid is not sent.
+
+    A protective stop is not retired by ``valid_from`` or by the session close.
+    """
+    if intent.protective:
+        return None
     if intent.valid_from is None:
         return None
     if now < intent.valid_from:
@@ -1408,6 +1658,40 @@ def _close_intent(
             journal.set_order_state(order_id, state, when=now)
     if source is not None:
         retired.add(source)
+
+
+def _block_all_r10(intent: OrderIntent, reason: str, now: datetime) -> bool:
+    """Lunch, auction, and closed R10 does not count toward the critical alert."""
+    if reason != "R10":
+        return False
+    from auto_trading.execution.sessions import BLOCK_ALL, session_window
+
+    market = intent.market or ""
+    try:
+        window = session_window(market, now)
+    except (ValueError, TypeError):
+        return False
+    return window in BLOCK_ALL
+
+
+def _remember_sent(context: GateContext, intent: OrderIntent) -> None:
+    """A sell sent earlier in this pass counts toward the next R20 check."""
+    from auto_trading.execution.oms import order_ref
+    from auto_trading.risk.gate import OpenOrder
+
+    key = intent.intent_id or intent.client_id
+    context.open_orders.append(
+        OpenOrder(
+            intent_id=key,
+            symbol=intent.symbol,
+            side=intent.side.value,
+            quantity=float(intent.quantity),
+            protective=intent.protective,
+            active=True,
+            strategy_id=intent.strategy_id,
+        )
+    )
+    context.order_refs = context.order_refs | {order_ref(key, context.order_seq)}
 
 
 def _reducing_blocked_alert(home: Path, intent: OrderIntent, reason: str, now: datetime) -> None:
@@ -1579,7 +1863,7 @@ def submit_once(
                 _record_once(journal, symbol=intent.symbol, code=reason, intent_id=key, now=now)
                 if source is not None:
                     kept.add(source)
-                if reducing:
+                if reducing and not _block_all_r10(intent, reason, now):
                     _reducing_blocked_alert(home, intent, reason, now)
                 rejected.append(reason)
                 skipped += 1
@@ -1646,6 +1930,7 @@ def submit_once(
             skipped += 1
             rejected.append("error")
             continue
+        _remember_sent(context, intent)
         if source is not None:
             kept.add(source)
         sent += 1

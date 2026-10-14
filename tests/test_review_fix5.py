@@ -33,6 +33,15 @@ from auto_trading.execution.strategy_book import (
     sync_row_carries_pin,
 )
 from auto_trading.market.quotes import write_quotes
+from auto_trading.portfolio.journal import TradeJournal
+
+
+def _release_working(home: Path, when: datetime) -> None:
+    """Drop working buys so the next case is about the quote, not R14."""
+    journal = TradeJournal(home)
+    for order_id, _symbol in journal.working_orders():
+        journal.set_order_state(order_id, "CANCELLED", when=when)
+
 
 PIN = "DUR243736"
 ROOT = Path(__file__).resolve().parents[1]
@@ -294,6 +303,7 @@ def test_fake_gateway_refetches_stale_quotes_and_does_not_stick_on_r22(
         again = submit_once(tmp_path, clock["now"], readonly=False)
         assert again["sent"] == 0
         assert len(log["req"]) == 1
+        _release_working(tmp_path, clock["now"])
 
         real = PaperGateway.snapshot_quotes
 
@@ -313,6 +323,7 @@ def test_fake_gateway_refetches_stale_quotes_and_does_not_stick_on_r22(
 
         clock["now"] = moment + timedelta(minutes=20)
         prep(clock["now"])
+        _release_working(tmp_path, clock["now"])
         intent("n2_twenty_min_later")
         later = submit_once(tmp_path, clock["now"], readonly=False)
         assert later["sent"] == 1
@@ -322,6 +333,7 @@ def test_fake_gateway_refetches_stale_quotes_and_does_not_stick_on_r22(
 
         clock["now"] = moment + timedelta(minutes=40)
         prep(clock["now"])
+        _release_working(tmp_path, clock["now"])
         intent("n3_forty_min_later")
         last = submit_once(tmp_path, clock["now"], readonly=False)
         assert last["sent"] == 1
@@ -388,7 +400,7 @@ def test_unreadable_pin_rejects_openings_and_still_sends_exits(
                 "market": "US",
                 "currency": "USD",
                 "side": "SELL",
-                "qty": 10,
+                "qty": 5,
                 "limit_price": 100,
                 "strategy_id": "ta_breakout52",
             },
@@ -411,7 +423,7 @@ def test_unreadable_pin_rejects_openings_and_still_sends_exits(
                 "market": "US",
                 "currency": "USD",
                 "side": "SELL",
-                "qty": 10,
+                "qty": 5,
                 "limit_price": 90,
                 "protective": True,
                 "strategy_id": "ta_breakout52",

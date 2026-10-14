@@ -1086,6 +1086,49 @@ class TradeJournal:
             ).fetchall()
         return [(str(row["order_id"]), str(row["symbol"])) for row in rows]
 
+    def working_order_details(self) -> list[dict[str, Any]]:
+        """Working orders with side and quantity from the intent payload."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT o.order_id, o.intent_id, o.symbol, o.protective, o.intent_type,
+                       i.strategy_id, i.payload_json
+                FROM orders o
+                LEFT JOIN intents i ON i.intent_id = o.intent_id
+                WHERE o.state IN (
+                    'SUBMITTING', 'SUBMITTED', 'PARTIALLY_FILLED', 'CANCEL_REQUESTED'
+                )
+                """
+            ).fetchall()
+        found: list[dict[str, Any]] = []
+        for row in rows:
+            payload: dict[str, Any] = {}
+            if row["payload_json"]:
+                try:
+                    loaded = json.loads(row["payload_json"])
+                except json.JSONDecodeError:
+                    loaded = None
+                if isinstance(loaded, dict):
+                    payload = loaded
+            qty = payload.get("quantity", payload.get("qty", 0))
+            try:
+                quantity = float(qty or 0)
+            except (TypeError, ValueError):
+                quantity = 0.0
+            found.append(
+                {
+                    "order_id": str(row["order_id"]),
+                    "intent_id": str(row["intent_id"]),
+                    "symbol": str(row["symbol"]),
+                    "side": str(payload.get("side") or ""),
+                    "qty": quantity,
+                    "protective": bool(row["protective"]),
+                    "intent_type": str(row["intent_type"] or ""),
+                    "strategy_id": None if row["strategy_id"] is None else str(row["strategy_id"]),
+                }
+            )
+        return found
+
     def strategy_pnl(self) -> list[dict[str, Any]]:
         """Cash by strategy. A SELL adds proceeds and a BUY subtracts cost."""
         with self._connect() as conn:

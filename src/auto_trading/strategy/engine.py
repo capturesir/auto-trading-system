@@ -128,7 +128,8 @@ def _intent(document: Mapping[str, Any], order: Any, session_date: str) -> dict[
         kind = "REDUCE"
     else:
         kind = "EXIT"
-    return {
+    protective = bool(getattr(order, "protective", False))
+    row = {
         "intent_id": order.intent_id,
         "intent_type": kind,
         "parent_intent_id": order.parent,
@@ -160,6 +161,10 @@ def _intent(document: Mapping[str, Any], order: Any, session_date: str) -> dict[
         },
         "strategy_id": document.get("id"),
     }
+    if protective:
+        row.pop("valid_from", None)
+        row["protective"] = True
+    return row
 
 
 def _valid_from(market: str, session_date: str) -> str:

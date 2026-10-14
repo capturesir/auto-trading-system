@@ -401,7 +401,10 @@ class PaperGateway:
         accounts = await self.connect()
         ib = self._ib
         try:
-            nlv = net_liquidation_base(list(ib.accountValues()))
+            values = list(ib.accountValues())
+            nlv = net_liquidation_base(values)
+            from auto_trading.execution.fx import rates_from_account_values, total_cash_base
+
             positions: list[dict[str, Any]] = []
             for pos in ib.positions():
                 contract = pos.contract
@@ -418,15 +421,21 @@ class PaperGateway:
                         ),
                     }
                 )
-            open_orders: list[dict[str, str]] = []
+            open_orders: list[dict[str, Any]] = []
             for trade in ib.openTrades():
                 order = trade.order
                 contract = trade.contract
                 ref = str(getattr(order, "orderRef", "") or getattr(order, "orderId", ""))
+                status = getattr(trade, "orderStatus", None)
+                total = float(getattr(order, "totalQuantity", 0) or 0)
+                filled = float(getattr(status, "filled", 0) or 0)
+                remaining = max(total - filled, 0.0)
                 open_orders.append(
                     {
                         "order_id": ref,
                         "symbol": str(contract.symbol),
+                        "side": str(getattr(order, "action", "") or ""),
+                        "qty": remaining,
                         "currency": str(getattr(contract, "currency", "") or ""),
                         "exchange": str(
                             getattr(contract, "primaryExchange", "")
@@ -438,6 +447,8 @@ class PaperGateway:
             return {
                 "accounts": accounts,
                 "nlv": nlv,
+                "cash": total_cash_base(values),
+                "fx_to_base": rates_from_account_values(values),
                 "positions": positions,
                 "open_orders": open_orders,
             }
