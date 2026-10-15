@@ -111,6 +111,14 @@ def write_intents(
         revision = int(previous.get("revision", 0)) + 1
     payload["revision"] = revision
     temporary = path.with_suffix(".json.tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    with temporary.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(temporary, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
     return path

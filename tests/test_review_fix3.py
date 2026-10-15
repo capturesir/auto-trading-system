@@ -338,7 +338,7 @@ def test_blocker5_pins_confirmed_hashes_and_rejects_a_tampered_file(tmp_path: Pa
     assert evaluate(bare, ctx) == "R25"
 
 
-def test_checksum_sync_restores_the_four_tampered_files(tmp_path: Path) -> None:
+def test_checksum_sync_restores_box_files_and_keeps_vps_intents(tmp_path: Path) -> None:
     root = tmp_path / "vps"
     box = tmp_path / "box"
     shutil.copytree(ROOT / "vps" / "deploy", root / "vps" / "deploy")
@@ -346,7 +346,6 @@ def test_checksum_sync_restores_the_four_tampered_files(tmp_path: Path) -> None:
         "strategies/approved/ta_breakout52.v1.json",
         "strategies/registry.jsonl",
         "config/adr_premium_rule_expected.json",
-        "intents/2026-10-08.json",
     ]
     older = time.time() - 86400
 
@@ -358,6 +357,8 @@ def test_checksum_sync_restores_the_four_tampered_files(tmp_path: Path) -> None:
 
     for rel in files:
         put(box, rel, f"box-good {rel}\n", older)
+    put(root, "intents/2026-10-08.json", "vps-intent\n", older)
+    put(box, "intents/2026-10-08.json", "box-stale\n", older)
     inbound = sync_argv(root, str(box), direction="in")
     assert "--checksum" in inbound
     assert "--update" not in inbound
@@ -365,11 +366,13 @@ def test_checksum_sync_restores_the_four_tampered_files(tmp_path: Path) -> None:
     subprocess.run(inbound, check=False)
     for rel in files:
         assert (root / rel).read_text(encoding="utf-8").startswith("box-good")
+    assert (root / "intents/2026-10-08.json").read_text(encoding="utf-8") == "vps-intent\n"
     for rel in files:
         put(root, rel, f"TAMPERED {rel}\n", older + 99999)
     subprocess.run(inbound, check=False)
     for rel in files:
         assert (root / rel).read_text(encoding="utf-8").startswith("box-good")
+    assert (root / "intents/2026-10-08.json").read_text(encoding="utf-8") == "vps-intent\n"
     put(box, "state/adr_premium_state.json", '{"owner":"box"}\n', older)
     put(root, "state/adr_premium_state.json", '{"owner":"vps"}\n', older + 5000)
     put(root, "state/risk_limits.json", "{}\n", older)

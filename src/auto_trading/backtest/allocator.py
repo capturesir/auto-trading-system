@@ -41,11 +41,11 @@ class Allocated:
     adr_substituted: bool = False
 
 
-def _rank(strategy_id: str) -> int:
+def _rank(strategy_id: str, priority: tuple[str, ...] = PRIORITY) -> int:
     try:
-        return PRIORITY.index(strategy_id)
+        return priority.index(strategy_id)
     except ValueError:
-        return len(PRIORITY)
+        return len(priority)
 
 
 def allocate(
@@ -58,19 +58,24 @@ def allocate(
     r2: float = 200_000,
     r9_size_mult: float = 1.0,
     adr_fallback: Callable[[Proposal], Proposal | None] | None = None,
+    priority: tuple[str, ...] = PRIORITY,
+    price_divisor: float = PRICE_BUFFER,
+    name_room: float = NAME_ROOM,
 ) -> list[Allocated]:
     """Clip proposals to the shared caps. Nothing is rounded up.
 
     ``r9_size_mult`` scales R1 and R2 during HALF_SIZE. R3 stays on the
-    issuer room, which this allocator does not halve.
+    issuer room, which this allocator does not halve. ``priority``,
+    ``price_divisor``, and ``name_room`` default to the backtest constants
+    and can be filled from ``config/allocator.yaml``.
     """
     held = dict(issuer_notional or {})
     r1 *= r9_size_mult
     r2 *= r9_size_mult
     exits = [item for item in proposals if item.kind in {"EXIT", "REDUCE"}]
     entries = [item for item in proposals if item.kind in {"ENTRY", "ADD"}]
-    entries.sort(key=lambda item: _rank(item.strategy_id))
-    order_budget = min(nlv * r1, r2) / PRICE_BUFFER
+    entries.sort(key=lambda item: _rank(item.strategy_id, priority))
+    order_budget = min(nlv * r1, r2) / price_divisor
     out: list[Allocated] = []
     opened: set[str] = set()
     for proposal in exits:
@@ -82,7 +87,7 @@ def allocate(
         if proposal.ticker in opened:
             out.append(Allocated(proposal, 0, "skipped_same_ticker"))
             continue
-        room = NAME_ROOM * nlv - held.get(proposal.issuer_group, 0.0)
+        room = name_room * nlv - held.get(proposal.issuer_group, 0.0)
         decision: LotDecision = size_quantity(
             price_local=proposal.price_local,
             fx_to_base=proposal.fx_to_base,

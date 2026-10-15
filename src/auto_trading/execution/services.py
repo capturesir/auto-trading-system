@@ -773,8 +773,9 @@ def sync_argv(root: Path, remote: str, *, direction: str) -> list[str]:
     """rsync arguments. Approved strategies move box to VPS only.
 
     The box-to-VPS pass uses ``--checksum`` and not ``--update``, so the box
-    copy replaces a newer tampered file. The VPS-to-box pass keeps ``--update``
-    and lists only VPS-owned paths. Neither pass uses ``--delete``.
+    copy replaces a newer tampered file. Intents are written on the VPS and
+    are refused on that pass. The VPS-to-box pass keeps ``--update`` and
+    lists only VPS-owned paths. Neither pass uses ``--delete``.
     """
     if direction == "out":
         name = "sync_vps_to_box.txt"
@@ -796,6 +797,10 @@ def sync_argv(root: Path, remote: str, *, direction: str) -> list[str]:
 
     if any(sync_row_carries_pin(row) for row in rows):
         raise RuntimeError("confirmed strategies are deployed by git, not sync")
+    if direction != "out" and any(
+        row.strip("/") == "intents" or row.startswith("intents/") for row in rows
+    ):
+        raise RuntimeError("inbound sync must not carry intents")
     target = remote if remote.endswith("/") else remote + "/"
     local = f"{root}/"
     if direction == "out":

@@ -1,5 +1,7 @@
 # VPS to box. One rsync path per line.
 # Box-owned files stay off this list. adr_premium_state.json is synced box to VPS only.
+# intents/ is written on the VPS. This mirror is for review on the box.
+intents/
 backups/
 approvals/pending/
 notifications/outbox/
