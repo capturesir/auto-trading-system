@@ -17,6 +17,9 @@ state/watchdog.json
 state/risk_limits.json
 state/r9_cycle.json
 state/submit.json
+state/intraday_watchlist.json
+state/intraday_reeval.json
+state/intraday_debounce.json
 state/sync.json
 state/breakers.json
 state/entry_pause.json
