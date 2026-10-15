@@ -41,21 +41,82 @@ def _field(item: Any, name: str) -> str:
     return str(getattr(item, name, "") or "")
 
 
-def net_liquidation_base(rows: list[Any]) -> float | None:
-    """Net liquidation in BASE only.
+_NLV_TAGS = frozenset({"NetLiquidation"})
+_LEDGER_NLV_TAGS = frozenset({"$LEDGER-NetLiquidationByCurrency", "NetLiquidationByCurrency"})
 
-    A missing BASE line is a failure. USD or HKD must not stand in for it.
+
+def _tagged_amount(
+    rows: list[Any], tags: frozenset[str], currency: str
+) -> tuple[bool, float | None]:
+    """Whether ``tags`` had a ``currency`` line, and the parsed amount.
+
+    A present line that is not a number fails closed: the flag is set and
+    the amount is ``None``, so a later tag cannot stand in for it.
     """
     for item in rows:
-        if _field(item, "tag") != "NetLiquidation":
+        if _field(item, "tag") not in tags:
             continue
-        if _field(item, "currency") != "BASE":
+        if _field(item, "currency").strip().upper() != currency:
             continue
         try:
-            return float(_field(item, "value"))
+            return True, float(_field(item, "value"))
         except ValueError:
-            return None
+            return True, None
+    return False, None
+
+
+def _chosen_nlv(rows: list[Any]) -> tuple[float, str] | None:
+    """NLV amount and the currency it is denominated in.
+
+    Currency ``BASE`` means the alias was used and the account base currency
+    was not identified, so the figure is already the system base.
+    """
+    from auto_trading.execution.fx import account_base_currency
+
+    base = account_base_currency(rows)
+    if base:
+        found, amount = _tagged_amount(rows, _NLV_TAGS, base)
+        if found:
+            return None if amount is None else (amount, base)
+    found, amount = _tagged_amount(rows, _NLV_TAGS, "BASE")
+    if found:
+        return None if amount is None else (amount, base or "BASE")
+    found, amount = _tagged_amount(rows, _LEDGER_NLV_TAGS, "BASE")
+    if found:
+        return None if amount is None else (amount, base or "BASE")
     return None
+
+
+def net_liquidation_base(rows: list[Any]) -> float | None:
+    """Net liquidation in the system base currency (HKD unless configured).
+
+    IB's account base currency, read from AccountValues, is authoritative.
+    ``NetLiquidation`` in that currency is accepted. An explicit ``BASE``
+    line and ``$LEDGER-NetLiquidationByCurrency`` in BASE are accepted too.
+    A figure already in the system base is kept. Any other currency is
+    converted with the existing FX helpers. Missing NLV, an unparseable
+    line, or a currency with no rate stays ``None``.
+    """
+    from auto_trading.backtest.fx import to_base
+    from auto_trading.config import get_settings
+    from auto_trading.execution.fx import DEFAULT_RATES_HKD, rates_from_account_values
+
+    chosen = _chosen_nlv(rows)
+    if chosen is None:
+        return None
+    amount, currency = chosen
+    system = get_settings().base_currency
+    if currency in {system, "BASE"}:
+        return amount
+    rates = rates_from_account_values(rows)
+    if currency not in rates:
+        if currency not in DEFAULT_RATES_HKD:
+            return None
+        rates = dict(DEFAULT_RATES_HKD)
+    try:
+        return to_base(amount, currency, rates, system)
+    except (KeyError, ValueError):
+        return None
 
 
 class IbkrBroker:
