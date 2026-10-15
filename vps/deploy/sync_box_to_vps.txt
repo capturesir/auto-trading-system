@@ -2,7 +2,7 @@
 # This pass is rsync --checksum without --update, so the box copy always wins.
 signals.json
 signals_archive/
-intents/
+# intents/  — VPS strategy runner owns intents; a box push must not replace them
 strategies/approved/
 strategies/registry.jsonl
 approvals/decided/
