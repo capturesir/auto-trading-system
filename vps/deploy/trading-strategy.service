@@ -1,0 +1,15 @@
+[Unit]
+Description=Paper strategy session for DUR243736
+After=network.target
+
+[Service]
+Type=oneshot
+User=trader
+WorkingDirectory=/srv/trading
+Environment=TRADING_HOME=/srv/trading
+Environment=SIGNALS_PATH=/srv/trading/signals.json
+Environment=IBKR_PAPER_ACCOUNT=DUR243736
+ExecStart=/srv/trading/scripts/run_paper_intents_daily.sh
+
+[Install]
+WantedBy=multi-user.target

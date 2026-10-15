@@ -20,6 +20,26 @@ from auto_trading.strategy.spec import INTERPRETER_VERSION, ApprovedStrategy, re
 OPEN = {"JP": "08:00:00", "KR": "08:00:00", "TW": "09:00:00", "HK": "09:30:00"}
 
 
+def intent_document(
+    document: Mapping[str, Any],
+    digest: str,
+    orders: list[Any],
+    session_date: str,
+) -> dict[str, Any]:
+    """Envelope shared by the engine and the paper session runner."""
+    return {
+        "schema_version": "intent/1.0",
+        "strategy_id": document["id"],
+        "strategy_version": document["version"],
+        "spec_hash": digest,
+        "interpreter_version": INTERPRETER_VERSION,
+        "mode": document.get("mode", "paper"),
+        "base_currency": "HKD",
+        "generated_at": f"{session_date}T07:05:00+08:00",
+        "intents": [_intent(document, order, session_date) for order in orders],
+    }
+
+
 class StrategyEngine:
     """Runs a strategy document only after :func:`require_approved` succeeds."""
 
@@ -63,17 +83,7 @@ class StrategyEngine:
                 adr_map=adr_map,
                 events=events,
             )
-        payload = {
-            "schema_version": "intent/1.0",
-            "strategy_id": document["id"],
-            "strategy_version": document["version"],
-            "spec_hash": digest,
-            "interpreter_version": INTERPRETER_VERSION,
-            "mode": document.get("mode", "paper"),
-            "base_currency": "HKD",
-            "generated_at": f"{session_date}T07:05:00+08:00",
-            "intents": [_intent(document, order, session_date) for order in orders],
-        }
+        payload = intent_document(document, digest, orders, session_date)
         return write_intents(
             trading_home,
             payload,

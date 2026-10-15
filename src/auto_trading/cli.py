@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -31,11 +32,41 @@ def main(argv: list[str] | None = None) -> None:
     backtest.add_argument("--end", default="")
     trade = sub.add_parser("trade", help="paper operator commands")
     trade.add_argument("trade_args", nargs=argparse.REMAINDER)
+    session = sub.add_parser("run-session", help="write paper intents for one session")
+    session.add_argument("--date", required=True, dest="session_date")
+    session.add_argument("--trading-home", type=Path, default=None)
+    session.add_argument("--signals", type=Path, default=None)
+    session.add_argument("--bars-cache", type=Path, default=None)
+    session.add_argument("--approved-dir", type=Path, default=None)
+    entries = session.add_mutually_exclusive_group()
+    entries.add_argument("--entries-allowed", dest="entries_allowed", action="store_true")
+    entries.add_argument("--no-entries-allowed", dest="entries_allowed", action="store_false")
+    session.set_defaults(entries_allowed=None)
     args = parser.parse_args(argv)
     if args.command == "trade":
         from auto_trading.cli_trade import main as trade_main
 
         trade_main(args.trade_args)
+        return
+    if args.command == "run-session":
+        from auto_trading.strategy.session import SessionError, run_session
+
+        home = args.trading_home
+        if home is None:
+            home = Path(os.environ.get("TRADING_HOME", "/srv/trading"))
+        try:
+            report = run_session(
+                trading_home=home,
+                session_date=args.session_date,
+                signals_path=args.signals,
+                bars_cache=args.bars_cache,
+                approved_dir=args.approved_dir,
+                entries_allowed=args.entries_allowed,
+            )
+        except SessionError as exc:
+            raise SystemExit(str(exc)) from exc
+        json.dump(report, sys.stdout, ensure_ascii=False, indent=2)
+        sys.stdout.write("\n")
         return
     if args.command == "hash":
         print(_hash(args.path))

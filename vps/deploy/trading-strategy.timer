@@ -1,0 +1,10 @@
+[Unit]
+Description=Paper strategy session at 07:05 Asia/Macau
+
+[Timer]
+OnCalendar=*-*-* 23:05:00 UTC
+Persistent=true
+Unit=trading-strategy.service
+
+[Install]
+WantedBy=timers.target
