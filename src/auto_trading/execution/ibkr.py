@@ -1,9 +1,9 @@
 """IBKR adapter placeholder.
 
-The live client will use IB Gateway and ``ib_async`` (optional extra
+The broker client will use IB Gateway and ``ib_async`` (optional extra
 ``ibkr``). That library is not imported here. A Hong Kong IBKR account is
-expected to trade US, Japan, Hong Kong, Korea, and Taiwan equities. Paper
-trading stays the default (``IBKR_PAPER``).
+expected to trade US, Japan, Hong Kong, Korea, and Taiwan equities. This
+package is paper-only: there is no setting that selects a real account.
 """
 
 from __future__ import annotations

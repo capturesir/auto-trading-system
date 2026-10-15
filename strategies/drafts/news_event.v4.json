@@ -1,0 +1,215 @@
+{
+  "schema_version": "strategy/1.1",
+  "id": "news_event",
+  "version": 4,
+  "mode": "paper",
+  "name": "A 組正面事件＋價格確認（短持有）",
+  "author": "b_group",
+  "created_at": "2026-10-01T14:10:00+08:00",
+  "parent_version": 3,
+  "markets": [
+    "US",
+    "JP",
+    "HK",
+    "KR",
+    "TW"
+  ],
+  "universe": {
+    "source": "a_group_signals",
+    "asset_type": "equity",
+    "exclude_pending_removal": true,
+    "one_per_issuer_group": true
+  },
+  "trigger": {
+    "type": "event",
+    "sources": [
+      {
+        "source": "a_news",
+        "path_pattern": "/workspace/invest/news/{date}.json",
+        "requires_schema": "news/1.0",
+        "item_filter": {
+          "status": [
+            "new",
+            "update"
+          ],
+          "event_types_exclude": [
+            "rating",
+            "other"
+          ],
+          "relations": [
+            "subject",
+            "affected"
+          ],
+          "direction": [
+            "positive"
+          ],
+          "min_impact": 2,
+          "affected_min_impact": 2
+        },
+        "read_fields": "tickers_only",
+        "shadow_log": [
+          "market_impacts",
+          "empty_tickers",
+          "filtered_items"
+        ],
+        "update_handling": {
+          "chain_field": "related_news_ids",
+          "event_key": "root_news_id",
+          "effective_judgement": "latest_visible_in_chain"
+        }
+      },
+      {
+        "source": "a_signal_change",
+        "path_pattern": "/workspace/trading/signals_archive/{date}.json",
+        "baseline_min_archive_days": 1,
+        "event_kinds": [
+          "new_buy",
+          "upgrade_to_buy",
+          "fv_revision_up"
+        ],
+        "fv_revision_min_pct": 5.0,
+        "upgrade_requires_fv_change_pct": 1.0,
+        "fv_reason_field": "fv_change_reason_type",
+        "fv_revision_reason_types": [
+          "news_event",
+          "earnings",
+          "data_update"
+        ],
+        "initial_reason_type": "initial",
+        "initial_counts_as": "new_buy_only",
+        "reason_missing_fallback": {
+          "method": "batch_heuristic",
+          "batch_change_ratio": 0.5
+        }
+      }
+    ],
+    "signal_filter": {
+      "side": [
+        "BUY"
+      ],
+      "min_confidence": 60,
+      "min_upside_live_pct": 0.0,
+      "shadow_log_sides": [
+        "HOLD"
+      ]
+    },
+    "timing": {
+      "visible_at": "max(judged_at, first_archived_at)",
+      "visible_at_no_archive": "judged_at",
+      "pre_event_close": "last_close_before_published_at",
+      "reaction_session": "first_session_open_after_published_at",
+      "max_age_sessions": 1,
+      "decision": "after_reaction_session_close"
+    }
+  },
+  "confirm": {
+    "by_source": {
+      "a_news": {
+        "any_of": [
+          {
+            "indicator": "event_gap_up",
+            "min_gap_pct": 2.0,
+            "hold_above_pre_close_pct": 1.0
+          },
+          {
+            "indicator": "event_volume_breakout",
+            "avg_period": 20,
+            "volume_multiple": 2.0,
+            "breakout_lookback": 20
+          }
+        ]
+      },
+      "a_signal_change": {
+        "all_of": [
+          {
+            "indicator": "close_above_ref",
+            "ref": "pre_event_close",
+            "min_pct": 0.0
+          },
+          {
+            "indicator": "close_above_ma",
+            "period": 20
+          }
+        ]
+      }
+    },
+    "guards": [
+      {
+        "indicator": "max_chase",
+        "ref": "pre_event_close",
+        "max_pct": 8.0
+      },
+      {
+        "indicator": "not_limit_up"
+      }
+    ]
+  },
+  "action": {
+    "side": "buy",
+    "size": {
+      "type": "pct_equity",
+      "value": 3.0,
+      "max_position_pct": 5.0
+    },
+    "order": {
+      "type": "limit",
+      "offset_bps": 10,
+      "session": "RTH",
+      "tif": "DAY",
+      "limit_cap": {
+        "ref": "pre_event_close",
+        "max_pct": 10.0,
+        "if_open_above": "skip"
+      }
+    },
+    "entry_window_sessions": 1
+  },
+  "exits": [
+    {
+      "type": "stop_loss_pct",
+      "value": 6.0
+    },
+    {
+      "type": "close_below_ref",
+      "ref": "pre_event_close",
+      "buffer_pct": 0.0
+    },
+    {
+      "type": "trailing_atr",
+      "atr_period": 14,
+      "multiple": 2.0
+    },
+    {
+      "type": "event_reversal",
+      "min_impact": 2,
+      "on_retracted": true,
+      "include_updates": true,
+      "on_superseded_disqualified": true
+    },
+    {
+      "type": "signal_reversal",
+      "on_side": [
+        "SELL"
+      ],
+      "upside_live_below_pct": -15.0
+    },
+    {
+      "type": "fair_value_reached",
+      "ratio": 1.0
+    },
+    {
+      "type": "time",
+      "max_hold": "10td"
+    }
+  ],
+  "portfolio": {
+    "max_positions": 5,
+    "max_market_pct": 50.0,
+    "max_new_entries_per_day": 2,
+    "one_position_per_event": true
+  },
+  "execution": {
+    "approval": "manual"
+  },
+  "cooldown": "10td"
+}

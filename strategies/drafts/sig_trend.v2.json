@@ -1,0 +1,101 @@
+{
+  "schema_version": "strategy/1.0",
+  "id": "sig_trend",
+  "version": 2,
+  "mode": "paper",
+  "name": "高信心估值訊號＋趨勢確認",
+  "author": "b_group",
+  "created_at": "2026-10-01T13:10:00+08:00",
+  "parent_version": 1,
+  "markets": [
+    "US",
+    "JP",
+    "HK",
+    "KR",
+    "TW"
+  ],
+  "universe": {
+    "source": "a_group_signals",
+    "asset_type": "equity",
+    "exclude_pending_removal": true,
+    "one_per_issuer_group": true
+  },
+  "trigger": {
+    "type": "signal",
+    "side": "BUY",
+    "min_confidence": 70,
+    "min_upside_live_pct": 15.0
+  },
+  "confirm": {
+    "all_of": [
+      {
+        "indicator": "close_above_ma",
+        "period": 50
+      },
+      {
+        "indicator": "ma_slope_up",
+        "period": 20,
+        "lookback": 5
+      }
+    ]
+  },
+  "action": {
+    "side": "buy",
+    "size": {
+      "type": "risk_pct",
+      "value": 0.5,
+      "stop_ref": "stop_atr",
+      "max_position_pct": 5.0
+    },
+    "order": {
+      "type": "limit",
+      "offset_bps": 10,
+      "session": "RTH",
+      "tif": "DAY"
+    }
+  },
+  "exits": [
+    {
+      "type": "stop_atr",
+      "atr_period": 14,
+      "multiple": 2.0
+    },
+    {
+      "type": "stop_loss_pct",
+      "value": 12.0
+    },
+    {
+      "type": "trailing_atr",
+      "atr_period": 14,
+      "multiple": 3.0
+    },
+    {
+      "type": "fair_value_reached",
+      "ratio": 0.98
+    },
+    {
+      "type": "trend_break",
+      "ma_period": 50,
+      "consecutive_closes": 2
+    },
+    {
+      "type": "signal_reversal",
+      "on_side": [
+        "SELL"
+      ],
+      "upside_live_below_pct": 5.0
+    },
+    {
+      "type": "time",
+      "max_hold": "250td"
+    }
+  ],
+  "portfolio": {
+    "max_positions": 10,
+    "max_market_pct": 50.0
+  },
+  "execution": {
+    "approval": "manual"
+  },
+  "cooldown": "5td"
+}

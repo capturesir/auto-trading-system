@@ -31,3 +31,6 @@ jobs:
 
       - name: Pytest
         run: pytest
+
+      - name: Refuse real-account switches
+        run: python scripts/check_paper_only.py

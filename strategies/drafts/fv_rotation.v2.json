@@ -1,0 +1,96 @@
+{
+  "schema_version": "strategy/1.0",
+  "id": "fv_rotation",
+  "version": 2,
+  "mode": "paper",
+  "name": "理論價折價排序輪動",
+  "author": "b_group",
+  "created_at": "2026-10-01T13:10:00+08:00",
+  "parent_version": 1,
+  "markets": [
+    "US",
+    "JP",
+    "HK",
+    "KR",
+    "TW"
+  ],
+  "universe": {
+    "source": "a_group_signals",
+    "asset_type": "equity",
+    "exclude_pending_removal": true,
+    "one_per_issuer_group": true,
+    "min_universe_size": 10
+  },
+  "trigger": {
+    "type": "schedule",
+    "rebalance": "weekly",
+    "at": "first_session_of_week",
+    "time_macau": "07:05"
+  },
+  "selection": {
+    "entry_filter": {
+      "side": [
+        "BUY"
+      ],
+      "min_confidence": 60,
+      "min_upside_live_pct": 10.0,
+      "min_return_20d_pct": -15.0
+    },
+    "hold_filter": {
+      "side": [
+        "BUY",
+        "HOLD"
+      ],
+      "min_upside_live_pct": 3.0
+    },
+    "rank_by": "upside_live_pct",
+    "order": "desc",
+    "top_n": 5,
+    "hold_buffer": 2
+  },
+  "action": {
+    "side": "buy",
+    "size": {
+      "type": "pct_equity",
+      "value": 5.0,
+      "weighting": "equal",
+      "max_position_pct": 5.0
+    },
+    "order": {
+      "type": "limit",
+      "offset_bps": 10,
+      "session": "RTH",
+      "tif": "DAY"
+    },
+    "rebalance_threshold_pct": 0.5
+  },
+  "exits": [
+    {
+      "type": "rank_drop",
+      "outside_top": 7
+    },
+    {
+      "type": "signal_reversal",
+      "on_side": [
+        "SELL"
+      ],
+      "upside_live_below_pct": 3.0
+    },
+    {
+      "type": "signal_missing",
+      "sessions": 5
+    },
+    {
+      "type": "stop_loss_pct",
+      "value": 20.0
+    }
+  ],
+  "portfolio": {
+    "max_positions": 5,
+    "max_market_pct": 50.0
+  },
+  "execution": {
+    "approval": "manual"
+  },
+  "cooldown": "1td"
+}

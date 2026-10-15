@@ -1,21 +1,122 @@
 """Strategy engine.
 
-The engine may turn an approved spec plus signals and indicators into an
-order intent. It does not place orders and it does not approve its own
-specs. An LLM is not part of this package.
+The engine turns an approved spec into intent files. It does not place
+orders, approve its own specs, or call the risk gate. An LLM is not part
+of this package.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
-from auto_trading.strategy.spec import ApprovedStrategy, require_approved
+from auto_trading.intents.writer import write_intents
+from auto_trading.market.calendar import us_open_in_macau
+from auto_trading.market.instruments import describe
+from auto_trading.strategy.spec import INTERPRETER_VERSION, ApprovedStrategy, require_approved
+
+OPEN = {"JP": "08:00:00", "KR": "08:00:00", "TW": "09:00:00", "HK": "09:30:00"}
 
 
 class StrategyEngine:
     """Runs a strategy document only after :func:`require_approved` succeeds."""
 
-    def run(self, document: Mapping[str, Any], approved: ApprovedStrategy) -> None:
-        require_approved(document, approved)
-        raise NotImplementedError("strategy execution is not implemented yet")
+    def run(
+        self,
+        document: Mapping[str, Any],
+        approved: ApprovedStrategy,
+        *,
+        trading_home: Path,
+        session_date: str,
+        signals: list[Any] | None = None,
+        bars: dict[str, list[Any]] | None = None,
+        nlv: float = 1_000_000.0,
+        entries_allowed: bool = True,
+        adr_map: list[Any] | None = None,
+        events: list[dict[str, Any]] | None = None,
+    ) -> Path:
+        """Write the session intent file. A hash mismatch writes nothing."""
+        digest = require_approved(document, approved)
+        orders: list[Any] = []
+        if bars is not None and signals is not None:
+            from auto_trading.backtest.engine import plan_session
+
+            orders = plan_session(
+                dict(document),
+                bars,
+                signals,
+                session_date,
+                nlv=nlv,
+                adr_map=adr_map,
+                events=events,
+            )
+        payload = {
+            "schema_version": "intent/1.0",
+            "strategy_id": document["id"],
+            "strategy_version": document["version"],
+            "spec_hash": digest,
+            "interpreter_version": INTERPRETER_VERSION,
+            "mode": document.get("mode", "paper"),
+            "base_currency": "HKD",
+            "generated_at": f"{session_date}T07:05:00+08:00",
+            "intents": [_intent(document, order, session_date) for order in orders],
+        }
+        return write_intents(
+            trading_home,
+            payload,
+            session_date=session_date,
+            entries_allowed=entries_allowed,
+        )
+
+
+def _intent(document: Mapping[str, Any], order: Any, session_date: str) -> dict[str, Any]:
+    spec = describe(order.ticker)
+    side = "BUY" if order.side == "BUY" else "SELL"
+    if order.kind == "ENTRY":
+        kind = "ENTRY"
+    elif order.kind == "indicator_take_profit":
+        kind = "REDUCE"
+    else:
+        kind = "EXIT"
+    return {
+        "intent_id": order.intent_id,
+        "intent_type": kind,
+        "parent_intent_id": order.parent,
+        "ticker": order.ticker,
+        "con_id": None,
+        "market": spec.market,
+        "exchange": spec.ib_exchange,
+        "currency": spec.currency,
+        "side": side,
+        "qty": order.qty,
+        "lot_size": spec.lot_size,
+        "order_type": "LMT",
+        "tif": "DAY",
+        "limit_offset_bps": 10,
+        "outside_rth": False,
+        "ref_price_at_create": order.ref_price,
+        "valid_from": _valid_from(spec.market, session_date),
+        "signal_id": order.signal_id,
+        "confidence": order.confidence,
+        "fair_value": order.fair_value,
+        "exit_reason": None if kind == "ENTRY" else order.kind,
+        "limit_price_cap": order.limit_cap,
+        "event_ref": None
+        if not order.news_id
+        else {
+            "event_source": order.event_source,
+            "news_id": order.news_id,
+            "pre_event_close": order.pre_event_close,
+        },
+        "strategy_id": document.get("id"),
+    }
+
+
+def _valid_from(market: str, session_date: str) -> str:
+    if market == "US":
+        opened = us_open_in_macau(datetime.fromisoformat(session_date).date())
+        return opened.isoformat()
+    clock = OPEN.get(market, "09:30:00")
+    return f"{session_date}T{clock}+08:00"

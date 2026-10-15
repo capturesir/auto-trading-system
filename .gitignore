@@ -1,8 +1,10 @@
-# Local database
+# Local database and downloaded bars
 *.sqlite
 *.sqlite3
+data/daily/
+**/data/daily/
 
-# Secrets. Names live in .env.example; filled-in files stay local.
+# Secrets. Names are listed in .env.example; filled-in files stay local.
 .env
 .env.*
 !.env.example
