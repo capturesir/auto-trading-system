@@ -7,7 +7,7 @@ of this package.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -36,6 +36,9 @@ class StrategyEngine:
         entries_allowed: bool = True,
         adr_map: list[Any] | None = None,
         events: list[dict[str, Any]] | None = None,
+        news_now: datetime | None = None,
+        news_sleep: Callable[[float], None] | None = None,
+        news_clock: Callable[[], datetime] | None = None,
     ) -> Path:
         """Write the session intent file. A hash mismatch writes nothing."""
         digest = require_approved(document, approved)
@@ -43,6 +46,14 @@ class StrategyEngine:
         if bars is not None and signals is not None:
             from auto_trading.backtest.engine import plan_session
 
+            if events is None:
+                events = _session_events(
+                    document,
+                    session_date,
+                    now=news_now,
+                    sleep=news_sleep,
+                    clock=news_clock,
+                )
             orders = plan_session(
                 dict(document),
                 bars,
@@ -71,6 +82,43 @@ class StrategyEngine:
         )
 
 
+def _news_dir(document: Mapping[str, Any]) -> Path | None:
+    """Directory of an ``a_news`` ``path_pattern``, when the spec has one."""
+    trigger = document.get("trigger")
+    if not isinstance(trigger, Mapping):
+        return None
+    sources = trigger.get("sources")
+    if not isinstance(sources, list):
+        return None
+    for source in sources:
+        if not isinstance(source, Mapping) or source.get("source") != "a_news":
+            continue
+        pattern = source.get("path_pattern")
+        if isinstance(pattern, str) and "{date}" in pattern:
+            return Path(pattern).parent
+    return None
+
+
+def _session_events(
+    document: Mapping[str, Any],
+    session_date: str,
+    *,
+    now: datetime | None,
+    sleep: Callable[[float], None] | None,
+    clock: Callable[[], datetime] | None,
+) -> list[dict[str, Any]]:
+    """News events for this session. Optional score fields are left out."""
+    folder = _news_dir(document)
+    if folder is None:
+        return []
+    from auto_trading.news.reader import events_for_strategy, read_session_news
+
+    loaded = read_session_news(folder, session_date, now=now, sleep=sleep, clock=clock)
+    if not loaded.enabled:
+        return []
+    return events_for_strategy(loaded.items)
+
+
 def _intent(document: Mapping[str, Any], order: Any, session_date: str) -> dict[str, Any]:
     spec = describe(order.ticker)
     side = "BUY" if order.side == "BUY" else "SELL"
@@ -80,7 +128,8 @@ def _intent(document: Mapping[str, Any], order: Any, session_date: str) -> dict[
         kind = "REDUCE"
     else:
         kind = "EXIT"
-    return {
+    protective = bool(getattr(order, "protective", False))
+    row = {
         "intent_id": order.intent_id,
         "intent_type": kind,
         "parent_intent_id": order.parent,
@@ -112,6 +161,10 @@ def _intent(document: Mapping[str, Any], order: Any, session_date: str) -> dict[
         },
         "strategy_id": document.get("id"),
     }
+    if protective:
+        row.pop("valid_from", None)
+        row["protective"] = True
+    return row
 
 
 def _valid_from(market: str, session_date: str) -> str:

@@ -1,2 +1,2 @@
-local_ticker,adr_ticker,adr_ratio,adr_currency,issuer_group,verified_at,source
-2330.TW,TSM,5,USD,TSMC,2026-10-01,A 組 watchlist 註記與公司資料
+adr,local_ticker,ratio,effective_from,effective_to,local_market,adr_currency,local_currency,issuer_group,adr_calendar,local_calendar,fx_ticker,fx_quote,fx_ref_sources,verified_at,source,note
+TSM,2330.TW,5,1997-10-08,,TW,USD,TWD,TSMC,XNYS,XTAI,TWD=X,local_per_usd,TPEFX_close;FRED_DEXTAUS,2026-10-06,SEC 20-F 附件 2(a)(1) 存託協議（1 ADS = 5 普通股）；Citibank DR 目錄 TSM（1:5）；台積電 2024 年報 p.84,ADS 1997-10-08 於 NYSE 上市起比率一直是 5；2009 年以前的配股以增發 ADS 分派，比率不變；2010-01-01 至 2026-10-06 兩邊無拆股或配股（yfinance actions）。比率變更時新增一行（新 effective_from），舊行填 effective_to，不刪除

@@ -1,0 +1,186 @@
+{
+  "schema_version": "ta_pool_meta/1.0",
+  "pool_id": "ta_pool_202610",
+  "asof": "2026-10-05",
+  "generated_at": "2026-10-08T08:41:43+08:00",
+  "strategy": {
+    "file": "strategies/approved/ta_breakout52.v1.json",
+    "id": "ta_breakout52",
+    "version": 1,
+    "spec_hash": "sha256:86046b4ceb98bb010e28fe219fac2fc72c5256d222e6f782d62f1f3b79066101"
+  },
+  "filters": {
+    "min_adv60_base": {
+      "US": 150000000,
+      "JP": 80000000,
+      "HK": 50000000,
+      "TW": 40000000,
+      "KR": 40000000
+    },
+    "min_close_local": {
+      "US": 5,
+      "JP": 100,
+      "HK": 1,
+      "TW": 10,
+      "KR": 1000
+    },
+    "max_lot_cost": "order_cap",
+    "lot_price_buffer_pct": 2.0,
+    "min_history_sessions": 260
+  },
+  "filters_hash": "sha256:3263c3701017bed35ebdf0a36db4435e66acecacab1aa940ffbf0fd00b86d807",
+  "order_cap": {
+    "nlv_base": 7800000.0,
+    "r1_order_size_pct_nlv": 0.05,
+    "r2_max_order_notional_base": 200000,
+    "cap_base": 200000,
+    "lot_price_buffer_pct": 2.0,
+    "base_currency": "HKD"
+  },
+  "sources": [
+    {
+      "name": "S&P 500",
+      "url": "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+      "file": "sp500.html",
+      "fetched_at": "2026-10-06T21:22:16+08:00",
+      "sha256": "sha256:a4b798455e179ab5beb1277e1ac5eaa48273ae28acd3a80904ca4fceab6a3acc"
+    },
+    {
+      "name": "Nasdaq-100",
+      "url": "https://api.nasdaq.com/api/quote/list-type/nasdaq100",
+      "file": "ndx_nasdaq.json",
+      "fetched_at": "2026-10-06T21:22:58+08:00",
+      "sha256": "sha256:b266df511ab63c5b4fb244925d0803381d74f6e2379a5cd47c19f312fd82feba"
+    },
+    {
+      "name": "Nikkei 225",
+      "url": "https://en.wikipedia.org/wiki/Nikkei_225",
+      "file": "n225.html",
+      "fetched_at": "2026-10-06T21:22:19+08:00",
+      "sha256": "sha256:0fd678d4d791a89f62e7871f3d8db9524d5bf7aeb4bd27ca69f514168b42d649"
+    },
+    {
+      "name": "Hang Seng Index",
+      "url": "https://en.wikipedia.org/wiki/Hang_Seng_Index",
+      "file": "hsi.html",
+      "fetched_at": "2026-10-06T21:22:21+08:00",
+      "sha256": "sha256:091817e3f2bfb532b40ca8d8e8a598a0178aa8792ac53cb5974bc6f4a3f52e4c"
+    },
+    {
+      "name": "Hang Seng China Enterprises Index",
+      "url": "https://en.wikipedia.org/wiki/Hang_Seng_China_Enterprises_Index",
+      "file": "hscei.html",
+      "fetched_at": "2026-10-06T21:22:23+08:00",
+      "sha256": "sha256:b31bb331ade9311fdc848a91de49ba25390a0505bcafb3db1e159d2fe065c59a"
+    },
+    {
+      "name": "Taiwan 50",
+      "url": "https://zh.wikipedia.org/wiki/%E8%87%BA%E7%81%A350%E6%8C%87%E6%95%B8",
+      "file": "tw50_zh.html",
+      "fetched_at": "2026-10-06T21:22:47+08:00",
+      "sha256": "sha256:ca4e005103780f8183a0c4601710f24672d13bf158254aa9fa2958f09042c7a1"
+    },
+    {
+      "name": "KOSPI 200",
+      "url": "https://en.wikipedia.org/wiki/KOSPI_200",
+      "file": "kospi200.html",
+      "fetched_at": "2026-10-06T21:22:26+08:00",
+      "sha256": "sha256:ffca5526467d6a588513ac74d1da415a4cd016c5493ea0e1e5e77335beaba197"
+    },
+    {
+      "name": "HKEX board lots",
+      "url": "https://www.hkex.com.hk/eng/services/trading/securities/securitieslists/ListOfSecurities.xlsx",
+      "file": "hkex_ListOfSecurities.xlsx",
+      "fetched_at": "2026-10-06T21:23:04+08:00",
+      "sha256": "sha256:0fa47d2d13bdbb48655cc154f4074c1dc5dbfa58716856d061b89ef4d44f7c53"
+    }
+  ],
+  "price_data": {
+    "source": "Yahoo Finance via yfinance (unadjusted close, volume)",
+    "last_session": {
+      "US": "2026-10-05",
+      "JP": "2026-10-05",
+      "HK": "2026-10-05",
+      "TW": "2026-10-05",
+      "KR": "2026-10-02"
+    },
+    "files": {
+      "US": {
+        "file": "research/opportunity_ta/data/px/US.parquet",
+        "sha256": "sha256:8e601c775c36390506a341a2404b749073b95bdf0b0e78063f0f5dc5ccde5c77"
+      },
+      "JP": {
+        "file": "research/opportunity_ta/data/px/JP.parquet",
+        "sha256": "sha256:1cef6624bed83af329c656f76a36c1871b0b90ebdddfeef907d42083e4f780a0"
+      },
+      "HK": {
+        "file": "research/opportunity_ta/data/px/HK.parquet",
+        "sha256": "sha256:f35615e08ffa9781d8d66de305440255fe160d701066e681b3436baaf05dae77"
+      },
+      "TW": {
+        "file": "research/opportunity_ta/data/px/TW.parquet",
+        "sha256": "sha256:9ce82616ef5028d96a36ac4ac707b63f614b5d2397594c40193bc477ae3bf698"
+      },
+      "KR": {
+        "file": "research/opportunity_ta/data/px/KR.parquet",
+        "sha256": "sha256:3870327adaf25c6f412fcb4c8c9c81c152e7de5f07faa94933dc3c6b4ebdc817"
+      },
+      "FX": {
+        "file": "research/opportunity_ta/data/px/FX.parquet",
+        "sha256": "sha256:087406a0e2a66a75d57841f37e5a2f57cd3f5096ffa94e96109dcea6a0573d6d"
+      }
+    }
+  },
+  "csv": {
+    "file": "data/universe/ta_pool.csv",
+    "archive": "data/universe/archive/ta_pool_202610.csv",
+    "columns": [
+      "asof",
+      "ticker",
+      "market",
+      "index_membership",
+      "currency",
+      "lot_size",
+      "close_local",
+      "lot_cost_base",
+      "adv60_base",
+      "history_sessions",
+      "pass_adv",
+      "pass_px",
+      "pass_lot",
+      "in_pool",
+      "excluded_reason"
+    ],
+    "format": "utf-8 no BOM; LF; comma; header; rows sorted by market (US,JP,HK,TW,KR) then ticker ASCII; close_local %.4f; lot_cost_base/adv60_base %.2f HKD; bool true/false; empty = missing"
+  },
+  "pool_hash": "sha256:d1a84b42e758eb1950906878541d290a440f8eade63ac87b8e8bd723a74bfca8",
+  "pool_hash_algorithm": "sha256 of the CSV file bytes; \"sha256:\" + lowercase hex",
+  "counts": {
+    "base": {
+      "US": 518,
+      "JP": 225,
+      "HK": 95,
+      "TW": 50,
+      "KR": 200,
+      "total": 1088
+    },
+    "in_pool": {
+      "US": 514,
+      "JP": 216,
+      "HK": 92,
+      "TW": 39,
+      "KR": 144,
+      "total": 1005
+    }
+  },
+  "excluded_reason_counts": {
+    "no_price_data": 0,
+    "stale_price": 0,
+    "no_lot_size": 0,
+    "history": 5,
+    "adv": 60,
+    "price": 1,
+    "lot": 17
+  },
+  "generator": "research/universe/build_pool.py"
+}

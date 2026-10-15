@@ -58,8 +58,8 @@ def test_r8_blocks_buys_and_leaves_sells() -> None:
     assert sim.allow("SELL", "exit") is None
 
 
-def _halted() -> RiskSimulator:
-    sim = RiskSimulator(hwm=100)
+def _halted(scenario: str = "cooldown_half_size") -> RiskSimulator:
+    sim = RiskSimulator(hwm=100, scenario=scenario)
     sim.mark(100, new_risk_day=True, trading_day=True, session_id="d0")
     sim.mark(94, new_risk_day=False, trading_day=True, session_id="d0")
     sim.mark(89, new_risk_day=False, trading_day=True, session_id="d0")
@@ -71,21 +71,22 @@ def test_r9_warn_then_halt_keeps_protective_stops() -> None:
     assert sim.r9_warn_count == 1
     assert sim.r9_halt_count == 1
     assert sim.halted_sessions == 0
-    assert sim.allow("SELL", "exit") == "R9"
+    assert sim.allow("SELL", "exit") is None
+    assert sim.allow("BUY", "entry") == "R9_HALTED_COOLDOWN"
     assert sim.allow("SELL", "protective") is None
     sim.note_protective_exit()
     assert sim.protective_stop_exits == 1
 
 
 def test_manual_resume_needs_five_days_and_a_recovery() -> None:
-    sim = _halted()
+    sim = _halted("manual_no_reset")
     for index in range(1, 5):
         sim.mark(95, new_risk_day=True, trading_day=True, session_id=f"d{index}")
         assert sim.halted
     sim.mark(95, new_risk_day=True, trading_day=True, session_id="d5")
     assert sim.halted is False
     assert sim.hwm == 100
-    stuck = _halted()
+    stuck = _halted("manual_no_reset")
     for index in range(1, 6):
         stuck.mark(89, new_risk_day=True, trading_day=True, session_id=f"d{index}")
     assert stuck.halted

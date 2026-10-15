@@ -1,0 +1,11 @@
+[Unit]
+Description=Monthly stock-pool rebuild
+# VPS venv packages: pandas pyarrow lxml openpyxl yfinance exchange_calendars
+
+[Service]
+Type=oneshot
+User=trader
+TimeoutStartSec=45min
+WorkingDirectory=/srv/trading
+Environment=TRADING_HOME=/srv/trading
+ExecStart=/srv/trading/scripts/pool_rebuild.sh

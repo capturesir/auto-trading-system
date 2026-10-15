@@ -8,7 +8,7 @@ import pytest
 
 from auto_trading.broker import OrderIntent, OrderSide
 from auto_trading.execution import Executor
-from auto_trading.risk import RiskGate
+from auto_trading.risk import RiskGate, RiskRejected
 
 
 def test_submit_stops_at_the_risk_gate() -> None:
@@ -27,7 +27,7 @@ def test_submit_stops_at_the_risk_gate() -> None:
 
     async def scenario() -> None:
         executor = Executor(broker=RejectingBroker(), gate=RiskGate())
-        with pytest.raises(NotImplementedError, match="risk gate"):
+        with pytest.raises(RiskRejected):
             await executor.submit(intent)
 
     asyncio.run(scenario())

@@ -1,0 +1,7287 @@
+{
+ "schema_version": "r9_cycle_vectors/1.0",
+ "params": {
+  "R9_drawdown_halt_pct": -0.1,
+  "R9_cooldown_trading_days": 20,
+  "R9_half_size_mult": 0.5,
+  "R9_half_size_trading_days": 20,
+  "R9_half_size_reset_dd_pct": -0.05
+ },
+ "vectors": [
+  {
+   "name": "full_cycle",
+   "initial_hwm": 1000.0,
+   "steps": [
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-02",
+      "nlv": 899.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_halt"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-02",
+      "xhkg": true,
+      "nlv": 899.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-07",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-08",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-09",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-10",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-11",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-11",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-12",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-12",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-13",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-13",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-14",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-14",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-15",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-15",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-16",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-16",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-17",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-17",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-18",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-18",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-19",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-19",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-20",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-20",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-21",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-21",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-22",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-22",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-23",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-23",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-24",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-24",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-25",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-25",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-26",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-26",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-27",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-27",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-28",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-28",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-29",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-29",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-30",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-30",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": [
+       "r9_resume_half_size"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-01",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-01",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-02",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-02",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 3,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 3,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-05",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-06",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-07",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 5,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 5,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-08",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 6,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 6,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-09",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 7,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 7,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-10",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 8,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-11",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 8,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-11",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-12",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-12",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-13",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-13",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-14",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-14",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 10,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-15",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 10,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-15",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 11,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-16",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 11,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-16",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 12,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-17",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 12,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-17",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-18",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-18",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-19",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-19",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-20",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-20",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-21",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-21",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 15,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-22",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 15,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-22",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 16,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-23",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 16,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-23",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 17,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-24",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 17,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-24",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-25",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-25",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-26",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-26",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-27",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-27",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-28",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-28",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 19,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-29",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 19,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-29",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": [
+       "r9_full_size"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-30",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-30",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-31",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-31",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-01",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-01",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-02",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-02",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-03",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-07",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-08",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-09",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-10",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "retrigger_in_half_size",
+   "initial_hwm": 1000.0,
+   "steps": [
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-02",
+      "nlv": 899.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_halt"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-02",
+      "xhkg": true,
+      "nlv": 899.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-07",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-08",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-09",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-10",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-11",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-11",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-12",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-12",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-13",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-13",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-14",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-14",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-15",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-15",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-16",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-16",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-17",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-17",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-18",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-18",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-19",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-19",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-20",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-20",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-21",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-21",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-22",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-22",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-23",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-23",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-24",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-24",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-25",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-25",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-26",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-26",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-27",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-27",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-28",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-28",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-29",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-29",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-30",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-30",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": [
+       "r9_resume_half_size"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-01",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-01",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-02",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_halt"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-02",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-03",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-03",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-04",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-04",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-05",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-05",
+      "xhkg": false,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-06",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-06",
+      "xhkg": false,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-07",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-07",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-08",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-08",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-09",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-09",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-10",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-10",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-11",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-11",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-12",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-12",
+      "xhkg": false,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-13",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-13",
+      "xhkg": false,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-14",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-14",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-15",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-15",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-16",
+      "nlv": 814.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-16",
+      "xhkg": true,
+      "nlv": 814.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 905.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "half_size_breach_resets_counter",
+   "initial_hwm": 1000.0,
+   "steps": [
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-02",
+      "nlv": 899.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_halt"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-02",
+      "xhkg": true,
+      "nlv": 899.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-07",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-08",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-09",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-10",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-11",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-11",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-12",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-12",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-13",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-13",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-14",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-14",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-15",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-15",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-16",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-16",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-17",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-17",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-18",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-18",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-19",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-19",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-20",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-20",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-21",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-21",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-22",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-22",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-23",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-23",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-24",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-24",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-25",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-25",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-26",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-26",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-27",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-27",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-28",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-28",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-29",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-29",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-30",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-30",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": [
+       "r9_resume_half_size"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-01",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-01",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-02",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-02",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 3,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 3,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-05",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-06",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-07",
+      "nlv": 855.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": [
+       "r9_half_size_reset"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-07",
+      "xhkg": true,
+      "nlv": 855.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-08",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-09",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-10",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 3,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-11",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 3,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-11",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-12",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-12",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-13",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-13",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-14",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 4,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-14",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 5,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-15",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 5,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-15",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 6,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-16",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 6,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-16",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 7,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-17",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 7,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-17",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 8,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-18",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 8,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-18",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-19",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-19",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-20",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-20",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-21",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 9,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-21",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 10,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-22",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 10,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-22",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 11,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-23",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 11,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-23",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 12,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-24",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 12,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-24",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-25",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-25",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-26",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-26",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-27",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-27",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-28",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 13,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-28",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-29",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 14,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-29",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 15,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-30",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 15,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-30",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 16,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-31",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 16,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-31",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 17,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-01",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 17,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-01",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-02",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-02",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-03",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 18,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 19,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 19,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": [
+       "r9_full_size"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-07",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-08",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-09",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2027-01-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2027-01-10",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "ACTIVE",
+      "hwm": 905.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 1.0,
+      "events": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "kill_switch_blocks_resume",
+   "initial_hwm": 1000.0,
+   "steps": [
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-02",
+      "nlv": 899.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_halt"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-02",
+      "xhkg": true,
+      "nlv": 899.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-07",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-07",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-08",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-08",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-09",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-09",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-10",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 5,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-10",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-11",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 6,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-11",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-12",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 7,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-12",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-13",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 8,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-13",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-14",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-14",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-15",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-15",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-16",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 9,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-16",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-17",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 10,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-17",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-18",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 11,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-18",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-19",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 12,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-19",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-20",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 13,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-20",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-21",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-21",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-22",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-22",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-23",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 14,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-23",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-24",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 15,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-24",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-25",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 16,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-25",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-26",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 17,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-26",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-27",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 18,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-27",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-28",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-28",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-29",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-29",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": true
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-30",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 19,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-30",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": true
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_resume_blocked"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-01",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 20,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-01",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": true
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 21,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-02",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 21,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-02",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": [
+       "r9_resume_half_size"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 1,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-05",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-12-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-12-06",
+      "xhkg": false,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 905.0,
+      "cooldown_days_done": 22,
+      "half_size_days_done": 2,
+      "size_mult": 0.5,
+      "events": []
+     }
+    }
+   ]
+  },
+  {
+   "name": "early_resume_by_user",
+   "initial_hwm": 1000.0,
+   "steps": [
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-02",
+      "nlv": 899.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": [
+       "r9_halt"
+      ]
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-02",
+      "xhkg": true,
+      "nlv": 899.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-03",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 0,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-03",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-04",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 1,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-04",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-05",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 2,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-05",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "nlv",
+      "risk_date": "2026-11-06",
+      "nlv": 905.0
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 3,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "day_end",
+      "risk_date": "2026-11-06",
+      "xhkg": true,
+      "nlv": 905.0,
+      "blocked": false
+     },
+     "expect": {
+      "state": "HALTED_COOLDOWN",
+      "hwm": 1000.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.0,
+      "events": []
+     }
+    },
+    {
+     "step": {
+      "op": "early_resume",
+      "risk_date": "2026-11-07",
+      "nlv": 910.0
+     },
+     "expect": {
+      "state": "HALF_SIZE",
+      "hwm": 910.0,
+      "cooldown_days_done": 4,
+      "half_size_days_done": 0,
+      "size_mult": 0.5,
+      "events": [
+       "r9_resume_half_size"
+      ]
+     }
+    }
+   ]
+  }
+ ]
+}

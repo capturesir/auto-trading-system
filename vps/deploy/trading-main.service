@@ -1,0 +1,11 @@
+[Unit]
+Description=Not installed. Use the split trader services.
+Conflicts=trading-oms.service trading-recon.service trading-watchdog.service trading-account.service trading-submit.service
+
+[Service]
+Type=oneshot
+User=trader
+ExecStart=/bin/sh -c 'echo "enable trading-account trading-oms trading-recon trading-watchdog trading-submit and the timers; do not enable trading-main" >&2; exit 1'
+
+[Install]
+WantedBy=multi-user.target

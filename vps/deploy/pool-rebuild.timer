@@ -1,0 +1,11 @@
+[Unit]
+Description=Start the stock-pool rebuild check daily at 06:00 HKT
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Timezone=Asia/Hong_Kong
+Persistent=true
+Unit=pool-rebuild.service
+
+[Install]
+WantedBy=timers.target

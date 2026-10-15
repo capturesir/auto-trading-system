@@ -1,6 +1,6 @@
 """Alerts for price, technical, and signal-change conditions.
 
-Delivery is not implemented yet. Alerts do not place orders.
+Sending is not implemented yet. Alerts do not place orders.
 """
 
 from enum import StrEnum

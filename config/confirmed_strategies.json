@@ -1,0 +1,28 @@
+{
+  "schema_version": "confirmed_strategies/1.0",
+  "deploy": "git-only",
+  "excluded_rules": ["adr_premium_veto"],
+  "strategies": [
+    {
+      "strategy_id": "sig_trend",
+      "version": 3,
+      "spec_hash": "sha256:9877996947f027efe89aa0991b23e93ac3e409c38660531109a2a5ce4404a334",
+      "confirmed_at": "2026-10-08T00:11:56+00:00",
+      "evidence": "用戶 2026-10-08 08:07 HKT 於交易系統經理對話明確確認「sig_trend v3 9877996947f0」"
+    },
+    {
+      "strategy_id": "sig_pullback",
+      "version": 3,
+      "spec_hash": "sha256:d2449671d3124d5c2da214e2a71c999e17641a99fb7df9dbf7cb80549c53f231",
+      "confirmed_at": "2026-10-08T00:11:56+00:00",
+      "evidence": "用戶 2026-10-08 08:07 HKT 於交易系統經理對話明確確認「sig_pullback v3 d2449671d312」"
+    },
+    {
+      "strategy_id": "ta_breakout52",
+      "version": 1,
+      "spec_hash": "sha256:86046b4ceb98bb010e28fe219fac2fc72c5256d222e6f782d62f1f3b79066101",
+      "confirmed_at": "2026-10-08T00:11:56+00:00",
+      "evidence": "用戶 2026-10-08 08:07 HKT 於交易系統經理對話明確確認「ta_breakout52 v1 86046b4ceb98」"
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "schema_version": "veto_rule/1.0",
+  "id": "adr_premium_veto",
+  "version": 1,
+  "mode": "paper",
+  "name": "ADR 溢價極端時暫停該 ADR 新買入",
+  "author": "b_group",
+  "created_at": "2026-10-06T21:00:00+08:00",
+  "parent_version": null,
+  "layer": "allocator",
+  "scope": {
+    "universe_source": "config/adr_map.csv",
+    "universe_key": "adr",
+    "row_selection": "effective_from <= date and (effective_to empty or date <= effective_to)",
+    "blocks_intent_types": [
+      "ENTRY",
+      "ADD"
+    ],
+    "never_blocks": [
+      "REDUCE",
+      "EXIT",
+      "protective_stop"
+    ],
+    "applies_to": "all_new_buys_of_the_adr_regardless_of_strategy_or_substitution"
+  },
+  "premium": {
+    "formula": "adr_close * fx_local_per_usd / ratio / local_close - 1",
+    "unit": "pct",
+    "pairing": "same_calendar_date",
+    "price_basis": "close_split_adjusted_no_dividend",
+    "ratio_source": "config/adr_map.csv:ratio (row effective at pair_date)",
+    "calendars": {
+      "adr": "adr_map:adr_calendar",
+      "local": "adr_map:local_calendar"
+    },
+    "require_both_open": true,
+    "exdiv_flag_window_pairs": 2
+  },
+  "fx": {
+    "primary": "yfinance:adr_map.fx_ticker",
+    "qc_references": [
+      "TPEFX_close",
+      "FRED_DEXTAUS"
+    ],
+    "qc_max_deviation_pct": 1.0,
+    "qc_on_fail": "use_reference_median",
+    "weekly_check": {
+      "source": "TPEFX_close",
+      "weekday": "FRI",
+      "warn_deviation_pct": 0.5
+    },
+    "references_enabled": false,
+    "references_enable_after": "batch2",
+    "when_references_disabled": {
+      "fx_source": "TWD=X_unverified",
+      "qc": "skip",
+      "weekly_check": "skip"
+    }
+  },
+  "stats": {
+    "window_valid_days": 250,
+    "min_valid_days": 250,
+    "percentile_method": "count_le_including_today_over_window_x100",
+    "zscore_ddof": 0,
+    "smooth_days": 5
+  },
+  "trigger": {
+    "metric": "percentile_250d",
+    "pause_at_or_above": 97.0,
+    "resume_at_or_below": 90.0
+  },
+  "uncomputable": {
+    "state": "unknown",
+    "blocks_new_buys": true,
+    "non_overlapping_local_holiday": {
+      "action": "carry_forward_last_valid_pair_result_and_state",
+      "max_carried_sessions": 3,
+      "field": "carried_forward_sessions",
+      "counts_as_uncomputable": false,
+      "after_max": {
+        "state": "unknown",
+        "reason": "{local_market_lower}_holiday_extended",
+        "counts_as_uncomputable": false
+      }
+    },
+    "unscheduled_closure_or_data_missing": {
+      "state": "unknown",
+      "counts_as_uncomputable": true
+    },
+    "escalate_after_consecutive": 3
+  },
+  "alerts": {
+    "paused": "adr_premium_paused",
+    "resumed": "adr_premium_resumed",
+    "uncomputable": "adr_premium_uncomputable",
+    "escalated": "adr_premium_uncomputable_escalated",
+    "fx_check": "adr_fx_ref_mismatch"
+  },
+  "output": {
+    "state_file": "state/adr_premium_state.json",
+    "state_schema": "adr_premium_state/1.0",
+    "state_extra_fields": [
+      "carried_forward_sessions"
+    ],
+    "expected_rule_file": "config/adr_premium_rule_expected.json",
+    "log_file": "data/adr_premium/adr_premium_log.csv",
+    "atomic_write": "tmp_then_rename",
+    "generated_at": "ISO8601_with_offset"
+  },
+  "session_mapping": {
+    "valid_for_us_session": "S = America/New_York date if it is an adr_calendar session not yet closed at generation time, else the next adr_calendar session",
+    "expected_pair_date": "latest date <= previous adr_calendar session before S that is a session in both adr_calendar and local_calendar",
+    "pair_date": "always equals expected_pair_date"
+  }
+}

@@ -1,79 +1,144 @@
 """Source scan that refuses real-account switches.
 
-``upside_live`` is a price metric and is allowlisted. A quote placeholder
-may say ``live quote``. Everything else that names a real-account mode, a
-real-account port, or a deleted promotion event must sit on a refusal line.
+Identifiers that contain the stem are accepted only when they appear, character
+for character, in the allowlist file. A comment does not exempt anything else.
+Ports other than 4002 and 7497 are refused. Account ids are accepted only when
+they match ``^DU[A-Z]?[0-9]+$`` and equal ``IBKR_PAPER_ACCOUNT``.
 """
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
-_LIVE = "liv" + "e"
-_REFUSAL = re.compile(
-    r"paper_only|refus|reject|forbidden|violation|must be null|不得|拒絕",
-    re.IGNORECASE,
+from auto_trading.paper_account import DU_ACCOUNT
+
+_STEM = "liv" + "e"
+_IDENT = re.compile(rf"[A-Za-z0-9_]*{_STEM}[A-Za-z0-9_]*", re.IGNORECASE)
+_PORT = re.compile(r"\b(?:" + "40" + "01" + "|" + "749" + "6" + r")\b")
+_SWITCH = re.compile(
+    r"\b(?:" + "TRADING_" + "MODE" + "|" + "IBKR_" + "USERNAME" + "|" + "IBKR_" + "PAPER" + r")\b"
 )
-_MULTIPLIER_OK = re.compile(
-    r"None|null|refus|reject|violation|paper_only|must|not",
-    re.IGNORECASE,
-)
+PAPER_PORTS = (4002, 7497)
+_SKIP_DIRS = {
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".eggs",
+}
+_SUFFIXES = {
+    ".py",
+    ".md",
+    ".yml",
+    ".yaml",
+    ".json",
+    ".jsonl",
+    ".toml",
+    ".txt",
+    ".example",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".sql",
+    ".sh",
+    ".service",
+    ".timer",
+    ".template",
+    ".csv",
+}
+_MAX_TEXT_BYTES = 5 * 1024 * 1024
 
 
-def _needles() -> list[str]:
-    """Tokens a real-account switch would contain. Built so this file is clean."""
-    return [
-        rf"\b{_LIVE}\b",
-        "400" + "1",
-        "749" + "6",
-        "TRADING_" + "MODE",
-        "IBKR_" + "USERNAME",
-        "IBKR_" + "PAPER",
-        _LIVE + "_promoted",
-        _LIVE + "_executable_ratio",
-        "gate_" + "passed",
-        "size_" + "changed",
-    ]
+def allowlist_path() -> Path:
+    """Path of the exact identifier list. The name is built so this file stays clean."""
+    name = "r0_" + _STEM + "_allowlist.txt"
+    return Path(__file__).resolve().parents[2] / "ci" / name
+
+
+def allow_tokens() -> frozenset[str]:
+    """Exact identifiers that may contain the stem."""
+    path = allowlist_path()
+    tokens: set[str] = set()
+    if path.is_file():
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            token = raw.strip()
+            if token and not token.startswith("#"):
+                tokens.add(token)
+    return frozenset(tokens)
+
+
+def paper_account_pin() -> str:
+    """The one account this process may manage. Empty when the pin is unset."""
+    return os.environ.get("IBKR_PAPER_ACCOUNT", "").strip()
+
+
+def account_accepted(account: str, pin: str | None = None) -> bool:
+    """True only for the paper pattern and the pinned account."""
+    chosen = paper_account_pin() if pin is None else pin.strip()
+    return bool(chosen) and account == chosen and DU_ACCOUNT.fullmatch(account) is not None
+
+
+def port_accepted(port: int) -> bool:
+    """True only for the paper Gateway port and the paper TWS port."""
+    return port in PAPER_PORTS
 
 
 def line_allowed(line: str) -> bool:
-    """True when ``line`` does not enable a real account."""
-    scrubbed = re.sub("upside_" + _LIVE, "", line, flags=re.IGNORECASE)
-    scrubbed = re.sub(_LIVE + r"[ _]?quote", "", scrubbed, flags=re.IGNORECASE)
-    multiplier = _LIVE + "_size_multiplier"
-    if multiplier in line and not _MULTIPLIER_OK.search(line):
+    """True when ``line`` does not enable a real account.
+
+    Every identifier that contains the stem must be on the allowlist. A
+    refusal comment does not change that. Forbidden ports fail on their own.
+    """
+    allowed = allow_tokens()
+    for token in _IDENT.findall(line):
+        if token not in allowed:
+            return False
+    return not (_PORT.search(line) or _SWITCH.search(line))
+
+
+def _looks_text(path: Path) -> bool:
+    try:
+        if path.stat().st_size > _MAX_TEXT_BYTES:
+            return False
+        chunk = path.read_bytes()[:4096]
+    except OSError:
         return False
-    if any(re.search(needle, scrubbed, re.IGNORECASE) for needle in _needles()):
-        return bool(_REFUSAL.search(line))
-    return True
+    return b"\0" not in chunk
+
+
+def _scannable(path: Path) -> bool:
+    """Text files, including names with no extension, ``.cfg``, and ``.conf``.
+
+    Directories named ``build`` or ``dist`` are not skipped. Caches and
+    virtualenvs are not source.
+    """
+    if any(part in _SKIP_DIRS for part in path.parts):
+        return False
+    if path.suffix in _SUFFIXES:
+        return _looks_text(path)
+    if path.suffix == "":
+        return _looks_text(path)
+    return False
+
+
+def iter_text_files(root: Path):
+    """Yield scannable files under ``root``."""
+    if not root.exists():
+        return
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and _scannable(path):
+            yield path
 
 
 def scan_tree(root: Path) -> list[str]:
     """Return ``path:line: text`` for every disallowed line under ``root``."""
-    skip = {
-        ".git",
-        ".venv",
-        "venv",
-        "__pycache__",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".mypy_cache",
-        "data",
-        "dist",
-        "build",
-        ".eggs",
-    }
-    suffixes = {".py", ".md", ".yml", ".yaml", ".json", ".toml", ".txt", ".example"}
-    names = {".gitignore", ".env.example"}
     findings: list[str] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
-        if any(part in skip for part in path.parts):
-            continue
-        if path.suffix not in suffixes and path.name not in names:
-            continue
+    for path in iter_text_files(root):
         text = path.read_text(encoding="utf-8", errors="replace")
         for number, line in enumerate(text.splitlines(), start=1):
             if not line_allowed(line):

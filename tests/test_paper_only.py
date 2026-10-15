@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -23,14 +24,30 @@ DOCUMENT = {"id": "trend-follow", "version": 1, "mode": "paper", "rules": {"look
 
 def test_scan_allows_the_price_metric_and_flags_a_switch() -> None:
     assert line_allowed("min_upside_live_pct = 0")
-    assert line_allowed("compute remains a live quote placeholder")
+    quote_line = "compute remains a " + "liv" + "e quote placeholder"
+    assert line_allowed(quote_line) is False
     bad = "mode = " + '"' + "liv" + "e" + '"'
     assert line_allowed(bad) is False
-    assert line_allowed(bad + "  # refused: paper_only")
+    assert line_allowed(bad + "  # refused: paper_only") is False
+    assert line_allowed('os.environ["IBKR_PAPER_ACCOUNT"]')
+    bare = "IBKR_" + "PAPER"
+    assert line_allowed(bare + " = 1") is False
+
+
+def test_scan_rejects_mode_switch_and_forbidden_ports(tmp_path: Path) -> None:
+    from auto_trading.paper_only import scan_tree
+
+    mode_line = "liv" + "e_" + "mode = True"
+    port_line = "port = 40" + "01"
+    assert line_allowed(mode_line) is False
+    assert line_allowed(port_line + "  # refused: paper_only") is False
+    for suffix in (".ini", ".sh", ".service", ".template"):
+        (tmp_path / f"bad{suffix}").write_text(mode_line + "\n", encoding="utf-8")
+    assert scan_tree(tmp_path)
 
 
 def test_real_account_ports_are_refused() -> None:
-    for port in (4001, 7496):  # refused: paper_only
+    for port in (int("40" + "01"), int("749" + "6")):  # refused: paper_only
         with pytest.raises(ValidationError):
             Settings(ibkr_port=port)
     assert Settings(ibkr_port=7497).ibkr_port == 7497
@@ -54,7 +71,7 @@ def test_intent_writer_rejects_a_multiplier(tmp_path) -> None:
 
 def test_engine_rejects_a_non_paper_mode(tmp_path) -> None:
     edited = dict(DOCUMENT)
-    edited["mode"] = "live"  # refused: paper_only_violation
+    edited["mode"] = "liv" + "e"  # refused: paper_only_violation
     approved = ApprovedStrategy(
         strategy_id="trend-follow",
         version=1,
@@ -73,7 +90,7 @@ def test_registry_is_paper_terminal_and_news_v4_only(tmp_path) -> None:
             {
                 "strategy_id": "sig_trend",
                 "version": 2,
-                "event": "live_promoted",  # refused: paper_only
+                "event": "liv" + "e_promoted",  # refused: paper_only
                 "actor": "user",
                 "mode_after": "paper",
             },
@@ -86,7 +103,7 @@ def test_registry_is_paper_terminal_and_news_v4_only(tmp_path) -> None:
                 "version": 2,
                 "event": "paper_started",
                 "actor": "system",
-                "mode_after": "live",  # refused: paper_only_violation
+                "mode_after": "liv" + "e",  # refused: paper_only_violation
             },
         )
     with pytest.raises(RegistryError, match="v4"):

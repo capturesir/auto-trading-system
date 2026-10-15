@@ -1,0 +1,11 @@
+# Box to VPS. One rsync path per line.
+# This pass is rsync --checksum without --update, so the box copy always wins.
+signals.json
+signals_archive/
+intents/
+strategies/approved/
+strategies/registry.jsonl
+approvals/decided/
+config/adr_map.csv
+config/adr_premium_rule_expected.json
+state/adr_premium_state.json

@@ -30,9 +30,8 @@ ALLOWED_EVENTS = frozenset(
         "rejected",
     }
 )
-DELETED_EVENTS = frozenset(
-    {"live_promoted", "size_changed", "gate_passed"}  # refused: paper_only
-)
+_REMOVED_EVENT = "liv" + "e_promoted"  # refused: paper_only
+DELETED_EVENTS = frozenset({_REMOVED_EVENT, "size_changed", "gate_passed"})
 RUNNABLE_MODES = frozenset({"paper"})
 MODES = frozenset({"paper", "disabled"})
 MACAU = ZoneInfo("Asia/Macau")

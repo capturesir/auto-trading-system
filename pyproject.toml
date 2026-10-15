@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 auto-trading = "auto_trading.cli:main"
+trade = "auto_trading.cli_trade:main"
 
 [project.optional-dependencies]
 dev = [
@@ -28,6 +29,11 @@ dashboard = [
 ibkr = [
   "ib_async>=1.0",
 ]
+universe = [
+  "lxml>=5",
+  "openpyxl>=3",
+  "yfinance>=0.2",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -37,13 +43,14 @@ build-backend = "hatchling.build"
 packages = ["src/auto_trading"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "research/universe/tests"]
 pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+extend-exclude = ["vps/deploy/render_template.py", "research/universe"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

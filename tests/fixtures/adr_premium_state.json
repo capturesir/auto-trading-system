@@ -1,0 +1,24 @@
+{
+ "schema_version": "adr_premium_state/1.0",
+ "generated_at": "2026-10-06T21:30:00+08:00",
+ "rule_id": "adr_premium_veto",
+ "rule_version": 1,
+ "rule_hash": "sha256:0c621402b71b5dd903c25aa65c5787369376c0301bce1789e731ebc589b24ba4",
+ "adrs": {
+  "TSM": {
+   "local_ticker": "2330.TW",
+   "ratio": 5,
+   "pair_date": "2026-10-05",
+   "valid_for_us_session": "2026-10-06",
+   "premium_pct": 20.12,
+   "premium_5d_pct": 18.37,
+   "percentile_250d": 62.4,
+   "zscore_250d": 0.29,
+   "state": "active",
+   "state_since": "2026-02-24",
+   "reason": "percentile_250d 62.4",
+   "consecutive_uncomputable": 0,
+   "carried_forward_sessions": 0
+  }
+ }
+}

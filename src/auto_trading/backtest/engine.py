@@ -2,8 +2,8 @@
 
 Decisions at 07:05 use bars whose ``available_at`` is already known. Fills use
 the next session's official open and the limit model. The odd-lot toggle
-defaults to false. R9 uses ``manual_no_reset`` unless another scenario is
-requested.
+defaults to false. R9 uses ``cooldown_half_size`` (the shared cycle).
+``manual_no_reset``, ``reset_after_5td``, and ``never`` are sensitivity runs.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 from auto_trading.backtest.adr import AdrMapping, consider_adr
@@ -20,6 +21,7 @@ from auto_trading.backtest.fx import to_base
 from auto_trading.backtest.lots import size_quantity
 from auto_trading.backtest.metrics import METRIC_KEYS, compute_metrics
 from auto_trading.backtest.risk_sim import RiskSimulator, fill_rejections
+from auto_trading.backtest.veto import blocked_tickers
 from auto_trading.market.instruments import describe
 from auto_trading.news.timing import entry_due, event_clock, is_first_session_of_week
 from auto_trading.strategy.conditions import UnknownCondition, choose_exit, confirms, exit_hits
@@ -166,6 +168,7 @@ def _run_once(
     strict: bool,
     resume: str,
     apply_risk: bool,
+    risk_limits: dict[str, Any] | None = None,
     adr_map: list[AdrMapping] | None = None,
     events: list[dict[str, Any]] | None = None,
 ) -> BacktestResult:
@@ -175,7 +178,7 @@ def _run_once(
     trades: list[dict[str, Any]] = []
     order_log: list[dict[str, Any]] = []
     equity: list[tuple[str, float]] = []
-    sim = RiskSimulator(hwm=nlv, scenario=resume)
+    sim = RiskSimulator(hwm=nlv, scenario=resume, limits=risk_limits)
     counters: dict[str, Any] = {
         "unfilled": 0,
         "lot_too_large": 0,
@@ -249,7 +252,14 @@ def _run_once(
                 continue
             notional = to_base(result.fill_price * result.qty, spec.currency, rates, base)
             if apply_risk and order.side == "BUY":
-                reasons = fill_rejections(notional, marked(day, "open"))
+                r1, r2, gross_cap = sim.order_caps()
+                reasons = fill_rejections(
+                    notional,
+                    marked(day, "open"),
+                    r1=r1,
+                    r2=r2,
+                    gross_cap=gross_cap,
+                )
                 if reasons:
                     for reason in reasons:
                         counters["rejected"][reason] += 1
@@ -384,6 +394,7 @@ def _run_once(
                 "halted_sessions": sim.halted_sessions,
                 "protective_stop_exits": sim.protective_stop_exits,
                 "r23_demote_count": 0,
+                "r9_cycles": sim.r9_cycles,
             },
             "allocator_priority": PRIORITY,
             "backtest_mode": "standalone",
@@ -994,18 +1005,27 @@ def run_backtest(
     bars: dict[str, list[Bar]],
     signals: list[BtSignal],
     *,
+    veto_paths: list[Path] | None = None,
     nlv: float = 1_000_000.0,
     base_currency: str = "HKD",
     rates_hkd_per_unit: dict[str, float] | None = None,
     odd_lot_enabled: bool = False,
-    resume: str = "manual_no_reset",
+    resume: str = "cooldown_half_size",
     apply_risk: bool = True,
+    risk_limits: dict[str, Any] | None = None,
     compare_r9: bool = False,
     compare_strict: bool = False,
     adr_map: list[AdrMapping] | None = None,
     events: list[dict[str, Any]] | None = None,
 ) -> BacktestResult:
-    """Run one backtest. Odd lots stay off unless ``odd_lot_enabled`` is set."""
+    """Run one backtest. Odd lots stay off unless ``odd_lot_enabled`` is set.
+
+    ``veto_paths`` are loaded by ``schema_version``. A blocked ticker is dropped
+    before the daily loop.
+    """
+    vetoed = blocked_tickers(veto_paths)
+    if vetoed:
+        signals = [row for row in signals if row.ticker not in vetoed]
     rates = rates_hkd_per_unit or {
         "HKD": 1.0,
         "USD": 7.8,
@@ -1020,6 +1040,7 @@ def run_backtest(
         "odd_lot": odd_lot_enabled,
         "resume": resume,
         "apply_risk": apply_risk,
+        "risk_limits": risk_limits,
         "adr_map": adr_map,
         "events": events,
     }

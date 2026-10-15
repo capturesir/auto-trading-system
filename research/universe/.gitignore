@@ -1,0 +1,5 @@
+# research/universe（v0.8 補4）：不入 repo 的檔案
+__pycache__/
+*.pyc
+cache/
+.staging/

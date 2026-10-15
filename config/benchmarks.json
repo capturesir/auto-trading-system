@@ -1,0 +1,47 @@
+{
+  "schema_version": "benchmarks/1.0",
+  "items": [
+    {
+      "id": "SPY",
+      "kind": "equity",
+      "sources": [
+        {"name": "yahoo", "symbol": "SPY"},
+        {"name": "stooq", "symbol": "spy.us"}
+      ]
+    },
+    {
+      "id": "QQQ",
+      "kind": "equity",
+      "sources": [
+        {"name": "yahoo", "symbol": "QQQ"},
+        {"name": "stooq", "symbol": "qqq.us"}
+      ]
+    },
+    {
+      "id": "BRK.B",
+      "kind": "equity",
+      "sources": [
+        {"name": "yahoo", "symbol": "BRK-B"},
+        {"name": "stooq", "symbol": "brk-b.us"}
+      ]
+    },
+    {
+      "id": "BTC",
+      "kind": "crypto",
+      "sources": [
+        {"name": "coinbase", "symbol": "BTC-USD"},
+        {"name": "kraken", "symbol": "XBTUSD"},
+        {"name": "coingecko", "symbol": "bitcoin"}
+      ]
+    },
+    {
+      "id": "ETH",
+      "kind": "crypto",
+      "sources": [
+        {"name": "coinbase", "symbol": "ETH-USD"},
+        {"name": "kraken", "symbol": "ETHUSD"},
+        {"name": "coingecko", "symbol": "ethereum"}
+      ]
+    }
+  ]
+}
