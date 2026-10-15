@@ -1,0 +1,23 @@
+[Unit]
+Description=B-group holdings 30s monitor (paper only, alerts only)
+After=network-online.target ibgateway.service
+Wants=ibgateway.service
+
+[Service]
+Type=simple
+User=trader
+WorkingDirectory=/srv/trading
+Environment=TRADING_HOME=/srv/trading
+Environment=HOLDINGS_MONITOR_INTERVAL_SEC=30
+Environment=IB_CLIENT_ID_HOLDINGS=15
+Environment=IB_READ_ONLY=1
+Environment=IBKR_PAPER_ACCOUNT=DUR243736
+ExecStart=/srv/trading/.venv/bin/python -m auto_trading.alerts.holdings_monitor
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/trading/alerts /srv/trading/state /srv/trading/logs
+
+[Install]
+WantedBy=multi-user.target
