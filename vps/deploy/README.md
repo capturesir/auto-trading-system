@@ -13,6 +13,9 @@
 - `trading-strategy.timer`：每日 07:05（澳門，unit 上是 23:05 UTC）跑一次 `scripts/run_paper_intents_daily.sh`，裡面只呼叫 `auto-trading run-session`。倉庫不執行 enable，也不執行 disable。機器上若已經 enable，合併後只替換這個 unit，不要再加第二個 timer。
 - `trading-summary.timer`：每日 06:00（澳門）寫摘要。
 - `pool-rebuild.timer`：每日 06:00（香港）檢查是否該重建股票池。逾時 45 分鐘。
+- `trading-holdings-monitor.service`：有倉時每 30 秒寫 `hm_*` 價量提醒（`alert/1.0`，`alerts/pending/`）。模擬帳戶 `DUR243736`，`IB_CLIENT_ID_HOLDINGS=15`，`IB_READ_ONLY=1`。此 repo 只提交單元檔；enable 與 start 留待合併後另一步。
+
+持倉快照的 VPS 路徑是 `/srv/trading/state/holdings_snapshot.json`。A 組讀 `/workspace/invest/b-group/holdings_snapshot.json`（symlink 指向 paper home 的 `state/holdings_snapshot.json`）。快照列在 `sync_vps_to_box.txt`，保持在 `sync_box_to_vps.txt` 之外。
 
 新倉在該市場開盤後 5 分鐘的 `open_buffer` 會被 R10 拒絕，檔案留在佇列，5 分鐘過後的下一輪再送，直到通過或該節收市。收盤前 10 分鐘的新倉同樣是 R10 並重試。沒有另加開盤後約 15 分鐘的延遲。引擎的 `valid_from` 是該市場開盤時間，所以開倉會先碰到 R10。出場和保護性停損不等這一段，閘門拒絕也不會把它們移出佇列。午市、競價和休市擋下的 R10 不計入連續三次的 critical。保護性停損留在佇列過夜，下一節若仍需要會再送；出場過了該節收市才移出。
 

@@ -9,6 +9,7 @@ alerts/sent/
 alerts/failed/
 logs/
 state/account.json
+state/holdings_snapshot.json
 state/gateway.json
 state/heartbeat.json
 state/recon.json
