@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -33,6 +34,7 @@ from auto_trading.risk.gate import MAX_QUOTE_DELAY_SEC, QUOTE_RECEIPT_MAX_SEC, R
 
 # Kept so a test can replace ``datetime.now`` without breaking ``isinstance``.
 _WallClock = datetime
+log = logging.getLogger(__name__)
 
 
 def _field(item: Any, name: str) -> str:
@@ -505,7 +507,9 @@ class PaperGateway:
                         ),
                     }
                 )
-            return {
+            from auto_trading.execution.fx_convert import cash_by_currency
+
+            snapshot = {
                 "accounts": accounts,
                 "nlv": nlv,
                 "cash": total_cash_base(values),
@@ -513,8 +517,86 @@ class PaperGateway:
                 "positions": positions,
                 "open_orders": open_orders,
             }
+            balances = cash_by_currency(values)
+            if balances is not None:
+                snapshot["cash_by_ccy"] = balances
+            return snapshot
         finally:
             self.disconnect()
+
+    async def convert_cash(self, plan: Any, *, account: str) -> dict[str, float] | None:
+        """Sell USD for ``plan.target_ccy`` and wait until that cash covers the buy.
+
+        An IdealPro pair is a market FX order. Anything else, including KRW
+        and TWD, is an IBKR cash conversion. A rejected or unconfirmed fill
+        returns None so the equity order is not sent. A working order with
+        the same ref is not placed again.
+        """
+        from auto_trading.execution.fx_convert import (
+            await_target_cash,
+            cash_by_currency,
+            fx_rejected,
+            fx_still_working,
+            ib_order_spec,
+        )
+        from auto_trading.paper_only import port_accepted
+
+        if not port_accepted(self.settings.ibkr_port):
+            return None
+        await self.connect()
+        ib = self._ib
+        try:
+            spec = ib_order_spec(plan, account)
+            values = list(ib.accountValues())
+            current = cash_by_currency(values) or {}
+            try:
+                have = float(current.get(plan.target_ccy, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                have = 0.0
+            if have + 1e-6 >= float(plan.required_target):
+                return {str(key).upper(): float(amount) for key, amount in current.items()}
+            trades = list(ib.trades()) if callable(getattr(ib, "trades", None)) else []
+            if not fx_still_working(trades or list(ib.openTrades()), spec["orderRef"]):
+                self._place_fx(ib, spec)
+
+            def read() -> dict[str, float] | None:
+                return cash_by_currency(list(ib.accountValues()))
+
+            def rejected() -> bool:
+                book = list(ib.trades()) if callable(getattr(ib, "trades", None)) else []
+                if not book:
+                    book = list(ib.openTrades())
+                return fx_rejected(book, spec["orderRef"])
+
+            return await_target_cash(
+                read,
+                target=plan.target_ccy,
+                required=float(plan.required_target),
+                sleep=ib.sleep,
+                rejected=rejected,
+            )
+        except Exception as exc:
+            log.warning("fx conversion failed: %s", type(exc).__name__)
+            return None
+        finally:
+            self.disconnect()
+
+    def _place_fx(self, ib: Any, spec: dict[str, Any]) -> None:
+        from ib_async import Contract, Order
+
+        contract = Contract()
+        contract.secType = spec["secType"]
+        contract.symbol = spec["symbol"]
+        contract.currency = spec["currency"]
+        contract.exchange = spec["exchange"]
+        order = Order()
+        order.action = spec["action"]
+        order.orderType = spec["orderType"]
+        order.totalQuantity = spec["totalQuantity"]
+        order.account = spec["account"]
+        order.orderRef = spec["orderRef"]
+        order.tif = spec["tif"]
+        ib.placeOrder(contract, order)
 
     async def submit_order(self, intent: Any) -> Any:
         """Place one order through the connected Gateway. E2 only."""

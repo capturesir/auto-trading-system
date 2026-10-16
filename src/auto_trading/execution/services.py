@@ -84,7 +84,8 @@ _OPENING = frozenset({"ENTRY", "ADD"})
 # Permanent opening rejects. Every other gate code stays pending and is retried.
 # R1 order notional, R2 order cap, R3 position, R4 market, R5 currency, R6 gross.
 # LOT_TOO_LARGE is one lot above the unscaled order cap.
-# R7 cash cover and R9_HALF_SIZE_LIMIT can clear later, so they are not listed.
+# R7 cash cover, R31 target-currency cash, and R9_HALF_SIZE_LIMIT can clear
+# later, so they are not listed.
 # Missing or unparseable valid_from is stored as INTENT_EXPIRED before the gate.
 # An exit, reduce, or protective stop is never terminal because of a gate code.
 _PERMANENT_REJECTS = frozenset(
@@ -508,6 +509,11 @@ def account_once(
     }
     if "cash" in data:
         payload["cash"] = None if data.get("cash") is None else float(data["cash"])
+    from auto_trading.execution.fx_convert import parse_cash_map
+
+    cash_map = parse_cash_map(data.get("cash_by_ccy")) if "cash_by_ccy" in data else None
+    if cash_map is not None:
+        payload["cash_by_ccy"] = cash_map
     fx_raw = data.get("fx_to_base")
     if isinstance(fx_raw, dict) and fx_raw:
         from auto_trading.execution.fx import store_rates
@@ -1033,6 +1039,121 @@ def load_intent_orders(home: Path) -> list[OrderIntent]:
     return found
 
 
+def _gateway_convert(order: Any, intent: OrderIntent) -> dict[str, float] | None:
+    """Paper Gateway conversion. Returns confirmed cash, or None when it did not land."""
+    import asyncio
+
+    from auto_trading.config import get_settings
+    from auto_trading.execution.ibkr import PaperGateway
+    from auto_trading.paper_only import port_accepted
+
+    if intent.mode != "paper" or intent.live_size_multiplier is not None:
+        return None
+    settings = get_settings()
+    if not port_accepted(settings.ibkr_port):
+        return None
+    client_id = int(os.environ.get("IB_CLIENT_ID", "11"))
+    gateway = PaperGateway(settings, client_id=client_id)
+    return asyncio.run(gateway.convert_cash(order, account=intent.account))
+
+
+def _cover_foreign_buy(
+    home: Path,
+    intent: OrderIntent,
+    ctx: GateContext,
+    convert: Callable[..., Any] | None,
+    now: datetime,
+) -> None:
+    """Convert USD into the settlement currency when the paper check says so.
+
+    A missing converter, a short USD balance, or a balance that never prints
+    leaves ``cash_by_ccy`` unchanged so the gate still refuses the equity.
+    """
+    from auto_trading.execution.fx_convert import assess, record_fx_attempt, trade_currency
+
+    if not ctx.fx_cash_check:
+        return
+    attempt = assess(
+        intent,
+        cash_by_ccy=ctx.cash_by_ccy,
+        open_orders=ctx.open_orders,
+        fx_to_base=ctx.fx_to_base,
+    )
+    key = intent.intent_id or intent.client_id
+    stamp = now.isoformat(timespec="seconds")
+    if attempt.action != "convert" or attempt.order is None:
+        if attempt.action == "block":
+            record_fx_attempt(
+                home,
+                intent_id=key,
+                symbol=intent.symbol,
+                status=attempt.reason or "blocked",
+                when=stamp,
+                target_ccy=trade_currency(intent),
+                usd_qty=attempt.usd_qty,
+                required_target=attempt.required_target,
+            )
+        return
+    order = attempt.order
+    if convert is None:
+        record_fx_attempt(
+            home,
+            intent_id=key,
+            symbol=intent.symbol,
+            status="no_converter",
+            when=stamp,
+            target_ccy=order.target_ccy,
+            usd_qty=order.usd_qty,
+            required_target=order.required_target,
+        )
+        return
+    try:
+        updated = convert(order, intent)
+    except Exception as exc:
+        log.warning("fx convert failed: %s", type(exc).__name__)
+        record_fx_attempt(
+            home,
+            intent_id=key,
+            symbol=intent.symbol,
+            status="error",
+            when=stamp,
+            target_ccy=order.target_ccy,
+            usd_qty=order.usd_qty,
+            required_target=order.required_target,
+            detail=type(exc).__name__,
+        )
+        return
+    have = 0.0
+    if isinstance(updated, dict):
+        try:
+            have = float(updated.get(order.target_ccy, 0.0) or 0.0)
+        except (TypeError, ValueError):
+            have = 0.0
+    if not isinstance(updated, dict) or have + 1e-6 < order.required_target:
+        record_fx_attempt(
+            home,
+            intent_id=key,
+            symbol=intent.symbol,
+            status="unconfirmed",
+            when=stamp,
+            target_ccy=order.target_ccy,
+            usd_qty=order.usd_qty,
+            required_target=order.required_target,
+        )
+        return
+    ctx.cash_by_ccy = {str(name).upper(): float(amount) for name, amount in updated.items()}
+    record_fx_attempt(
+        home,
+        intent_id=key,
+        symbol=intent.symbol,
+        status="confirmed",
+        when=stamp,
+        target_ccy=order.target_ccy,
+        usd_qty=order.usd_qty,
+        required_target=order.required_target,
+    )
+
+
 def _broker_place(intent: OrderIntent) -> None:
     """Send one order. Called only after E2 turns ReadOnlyApi off."""
     import asyncio
@@ -1376,6 +1497,10 @@ def _production_context(
     cash = nlv
     if "cash" in account and account.get("cash") is not None:
         cash = float(account["cash"])
+    from auto_trading.execution.fx_convert import fx_preconvert_enabled, parse_cash_map
+
+    fx_cash_check = fx_preconvert_enabled()
+    cash_by_ccy = parse_cash_map(account.get("cash_by_ccy")) if fx_cash_check else None
     recon_ok = True
     recon_path = home / "state" / "recon.json"
     if recon_path.is_file():
@@ -1406,6 +1531,8 @@ def _production_context(
         approved_dir=_strategies_root(home),
         fx_to_base=fx,
         quotes=quotes,
+        cash_by_ccy=cash_by_ccy,
+        fx_cash_check=fx_cash_check,
     )
 
 
@@ -1761,6 +1888,7 @@ def submit_once(
     session: ApprovalSession | None = None,
     place: Callable[[OrderIntent], None] | None = None,
     readonly: bool | None = None,
+    convert: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Engine intents, the full risk gate, approval, the journal, then the broker.
 
@@ -1769,8 +1897,13 @@ def submit_once(
     in the queue and is tried again later. Only ``_PERMANENT_REJECTS`` retires
     an opening. An exit or protective stop is not retired by a gate rejection.
     ``mode`` other than paper, and any size multiplier, never reach the broker.
+
+    When ``TRADING_FX_PRECONVERT=1``, a BUY that settles in a currency other
+    than USD is converted from USD first. R31 still blocks the equity order
+    when that cash is short or the conversion is not confirmed.
     """
     from auto_trading.execution.approvals import queue_order
+    from auto_trading.execution.fx_convert import fx_preconvert_enabled, reserve_target
     from auto_trading.risk.gate import evaluate
 
     is_readonly = read_only_api() if readonly is None else readonly
@@ -1790,6 +1923,15 @@ def submit_once(
     sender = place
     if sender is None and os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() == "1":
         sender = _broker_place
+    if fx_preconvert_enabled():
+        context.fx_cash_check = True
+    converter = convert
+    if (
+        converter is None
+        and context.fx_cash_check
+        and os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() == "1"
+    ):
+        converter = _gateway_convert
     sent = 0
     skipped = 0
     gated: list[str] = []
@@ -1859,6 +2001,9 @@ def submit_once(
         _bind_approved_hash(context, intent)
         gated.append(intent.symbol)
         code = evaluate(intent, context)
+        if code == "R31":
+            _cover_foreign_buy(home, intent, context, converter, now)
+            code = evaluate(intent, context)
         blocked = intent.mode != "paper" or intent.live_size_multiplier is not None
         if code or blocked:
             reason = code or "LIVE_NOT_AUTHORIZED"
@@ -1936,6 +2081,8 @@ def submit_once(
             rejected.append("error")
             continue
         _remember_sent(context, intent)
+        if context.fx_cash_check and isinstance(context.cash_by_ccy, dict):
+            context.cash_by_ccy = reserve_target(context.cash_by_ccy, intent)
         if source is not None:
             kept.add(source)
         sent += 1

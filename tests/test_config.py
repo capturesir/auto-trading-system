@@ -103,6 +103,7 @@ def test_env_example_lists_names_only() -> None:
         "TRADING_HOME",
         "BASE_CURRENCY",
         "FORCE_MANUAL_APPROVAL",
+        "TRADING_FX_PRECONVERT",
     ]
 
 
