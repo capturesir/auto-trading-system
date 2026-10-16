@@ -1,0 +1,12 @@
+[Unit]
+Description=Intraday re-eval every 2 minutes (paper DUR243736; RTH gate is in the process)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=30s
+Persistent=true
+Unit=trading-intraday-reeval.service
+
+[Install]
+WantedBy=timers.target

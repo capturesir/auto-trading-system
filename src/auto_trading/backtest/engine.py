@@ -528,6 +528,7 @@ def _entries(
     counters,
     adr_map,
     events,
+    include_session_bar: bool = False,
 ):
     orders: list[_Order] = []
     trigger = strategy.get("trigger") or {}
@@ -557,7 +558,9 @@ def _entries(
             continue
         if signal.confidence < minimum:
             continue
-        history = [row for row in bars.get(signal.ticker, []) if row.date < day]
+        history = _visible_history(
+            bars, signal.ticker, day, include_session_bar=include_session_bar
+        )
         assert_visible(history, decision_time)
         price = history[-1].close if history else signal.fair_value
         upside = _upside(signal, price)
@@ -948,6 +951,25 @@ def _snapshot(bars: dict[str, list[Bar]]) -> str:
     return "sha256:" + hashlib.sha256("\n".join(parts).encode()).hexdigest()
 
 
+def _visible_history(
+    bars: dict[str, list[Bar]],
+    ticker: str,
+    day: str,
+    *,
+    include_session_bar: bool,
+) -> list[Bar]:
+    """Bars the confirm may see.
+
+    The 07:05 path uses sessions strictly before ``day``. An intraday re-eval
+    passes ``include_session_bar`` so the provisional last, stored as that
+    session's close, is the last point in the same daily series.
+    """
+    rows = bars.get(ticker, [])
+    if include_session_bar:
+        return [row for row in rows if row.date <= day]
+    return [row for row in rows if row.date < day]
+
+
 def plan_session(
     strategy: dict[str, Any],
     bars: dict[str, list[Bar]],
@@ -960,8 +982,14 @@ def plan_session(
     odd_lot_enabled: bool = False,
     adr_map: list[AdrMapping] | None = None,
     events: list[dict[str, Any]] | None = None,
+    decision_time: str | None = None,
+    include_session_bar: bool = False,
 ) -> list[_Order]:
-    """Opening and exit orders for one 07:05 decision, starting from a flat book."""
+    """Opening orders for one decision, starting from a flat book.
+
+    ``include_session_bar`` is for intraday re-eval only. The morning runner
+    leaves it false, so confirm still sees the previous session's close.
+    """
     rates = rates_hkd_per_unit or {
         "HKD": 1.0,
         "USD": 7.8,
@@ -981,7 +1009,7 @@ def plan_session(
         bars,
         signals,
         session_date,
-        f"{session_date}T07:05:00+08:00",
+        decision_time or f"{session_date}T07:05:00+08:00",
         {},
         nlv,
         odd_lot_enabled,
@@ -992,6 +1020,7 @@ def plan_session(
         counters,
         adr_map or [],
         events or [],
+        include_session_bar,
     )
 
 

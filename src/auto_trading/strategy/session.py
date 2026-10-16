@@ -171,6 +171,19 @@ def run_session(
         payload["mode"] = "paper"
         path = write_intents(home, payload, session_date=session_date, entries_allowed=allowed)
         written.append(path.relative_to(home).as_posix())
+    from auto_trading.intraday.reeval import note_session_intents
+    from auto_trading.intraday.watchlist import write_watchlist
+
+    note_session_intents(home, session_date)
+    watch_path = write_watchlist(
+        home,
+        session_date=session_date,
+        now=clock,
+        signals=usable,
+        bars=bars,
+        approved_dir=folder,
+        pins=pins,
+    )
     return {
         "session_date": session_date,
         "entries_allowed": allowed,
@@ -179,6 +192,7 @@ def run_session(
         "written": written,
         "skipped": skipped,
         "warnings": warnings,
+        "watchlist": watch_path.relative_to(home).as_posix(),
     }
 
 

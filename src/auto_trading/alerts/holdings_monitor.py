@@ -1,5 +1,8 @@
 """30-second holdings monitor. Alerts only. Paper account DUR243736.
 
+This process does not place orders and does not write intent files.
+Intraday ENTRY and EXIT intents belong to ``auto_trading.intraday``.
+
 Client id 15 is the only id this process may use. 11 (submit), 12 (recon),
 13 (account), 14 (watchdog), and 31 (health) are refused before any Gateway
 connect. The process writes ``alerts/pending/`` and ``state/``. It does not

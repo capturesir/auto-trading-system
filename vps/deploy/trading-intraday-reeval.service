@@ -1,0 +1,22 @@
+[Unit]
+Description=Paper intraday re-eval for DUR243736 (confirm replay, not holdings-monitor)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=trader
+WorkingDirectory=/srv/trading
+Environment=TRADING_HOME=/srv/trading
+Environment=IBKR_PAPER_ACCOUNT=DUR243736
+Environment=IB_CLIENT_ID_REEVAL=16
+Environment=IB_READ_ONLY=1
+Environment=INTRADAY_REEVAL_WRITE_INTENTS=0
+Environment=INTRADAY_REEVAL_WRITE_EXITS=0
+Environment=INTRADAY_REEVAL_INCLUDE_VALID_BUYS=1
+ExecStart=/srv/trading/.venv/bin/python -m auto_trading.intraday --once
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/srv/trading/intents /srv/trading/state /srv/trading/alerts /srv/trading/logs
+
+[Install]
+WantedBy=multi-user.target
