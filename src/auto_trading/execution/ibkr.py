@@ -604,15 +604,16 @@ class PaperGateway:
                     book = list(ib.openTrades())
                 return fx_rejected(book, spec["orderRef"])
 
-            return await_target_cash(
+            # Yield on this loop. ib.sleep -> util.run raises
+            # "This event loop is already running" inside asyncio.run.
+            return await await_target_cash(
                 read,
                 target=plan.target_ccy,
                 required=float(plan.required_target),
-                sleep=ib.sleep,
                 rejected=rejected,
             )
         except Exception as exc:
-            log.warning("fx conversion failed: %s", type(exc).__name__)
+            log.warning("fx conversion failed: %s: %s", type(exc).__name__, exc)
             return None
         finally:
             self.disconnect()

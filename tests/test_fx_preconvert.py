@@ -7,6 +7,7 @@ the same buy is allowed.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from datetime import datetime
@@ -17,6 +18,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from auto_trading.broker import OrderIntent, OrderSide
+from auto_trading.config import Settings
 from auto_trading.execution.approval_mode import ApprovalSession
 from auto_trading.execution.fx_convert import (
     FX_BUFFER_BPS,
@@ -31,6 +33,7 @@ from auto_trading.execution.fx_convert import (
     required_target_cash,
     usd_for_shortfall,
 )
+from auto_trading.execution.ibkr import PaperGateway
 from auto_trading.execution.services import account_once, submit_once
 from auto_trading.execution.strategy_book import CONFIRMED_SPEC_HASHES
 from auto_trading.risk.gate import GateContext, Quote, RiskGate, RiskRejected
@@ -227,40 +230,77 @@ def test_balance_wait_confirms_or_stops() -> None:
         clock["t"] += seconds
 
     reads = iter(({"KRW": 0.0, "USD": 100.0}, {"KRW": 80_000.0, "USD": 40.0}))
-    confirmed = await_target_cash(
-        lambda: next(reads),
-        target="KRW",
-        required=74_840.0,
-        timeout_sec=5,
-        poll_sec=0.5,
-        sleep=sleep,
-        monotonic=monotonic,
+    confirmed = asyncio.run(
+        await_target_cash(
+            lambda: next(reads),
+            target="KRW",
+            required=74_840.0,
+            timeout_sec=5,
+            poll_sec=0.5,
+            sleep=sleep,
+            monotonic=monotonic,
+        )
     )
     assert confirmed is not None
     assert confirmed["KRW"] == pytest.approx(80_000.0)
     assert clock["t"] == pytest.approx(0.5)
 
     clock["t"] = 0.0
-    timed = await_target_cash(
-        lambda: {"KRW": 1.0},
-        target="KRW",
-        required=74_840.0,
-        timeout_sec=1.0,
-        poll_sec=0.5,
-        sleep=sleep,
-        monotonic=monotonic,
+    timed = asyncio.run(
+        await_target_cash(
+            lambda: {"KRW": 1.0},
+            target="KRW",
+            required=74_840.0,
+            timeout_sec=1.0,
+            poll_sec=0.5,
+            sleep=sleep,
+            monotonic=monotonic,
+        )
     )
     assert timed is None
-    stopped = await_target_cash(
-        lambda: {"KRW": 0.0},
-        target="KRW",
-        required=10.0,
-        timeout_sec=30,
-        sleep=sleep,
-        monotonic=monotonic,
-        rejected=lambda: True,
+    stopped = asyncio.run(
+        await_target_cash(
+            lambda: {"KRW": 0.0},
+            target="KRW",
+            required=10.0,
+            timeout_sec=30,
+            sleep=sleep,
+            monotonic=monotonic,
+            rejected=lambda: True,
+        )
     )
     assert stopped is None
+
+
+def test_balance_wait_yields_so_the_loop_can_update_cash() -> None:
+    """A pause must leave the running loop free to apply the cash update."""
+
+    async def scenario() -> None:
+        loop = asyncio.get_running_loop()
+        state = {"reads": 0, "posted": False}
+
+        async def post() -> None:
+            state["posted"] = True
+
+        def read() -> dict[str, float]:
+            state["reads"] += 1
+            if state["reads"] == 1:
+                loop.create_task(post())
+                return {"TWD": 0.0}
+            return {"TWD": 100.0 if state["posted"] else 0.0}
+
+        found = await await_target_cash(
+            read,
+            target="TWD",
+            required=10.0,
+            timeout_sec=1.0,
+            poll_sec=0.01,
+        )
+        assert found is not None
+        assert found["TWD"] == pytest.approx(100.0)
+        assert state["posted"] is True
+
+    asyncio.run(scenario())
 
 
 def test_account_snapshot_stores_cash_by_ccy(tmp_path: Path, monkeypatch) -> None:
@@ -499,3 +539,110 @@ def test_usd_buy_is_not_preconverted(tmp_path: Path, monkeypatch) -> None:
 def test_submit_unit_does_not_enable_preconvert() -> None:
     text = (ROOT / "vps" / "deploy" / "trading-submit.service").read_text(encoding="utf-8")
     assert "TRADING_FX_PRECONVERT" not in text
+
+
+def test_convert_cash_confirms_without_reentering_the_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cash shows up after a yield. ib.sleep must not run inside this loop.
+
+    The paper failure was RuntimeError from ib.sleep/util.run while
+    convert_cash was already running under asyncio.run. TWD stays FXCONV
+    and JPY stays an IdealPro market order.
+    """
+
+    class FakeIB:
+        def __init__(self) -> None:
+            self.filled = False
+            self.sleep_calls = 0
+
+        def accountValues(self) -> list[SimpleNamespace]:
+            amount = "1000000" if self.filled else "0"
+            usd = "9000" if self.filled else "10000"
+            return [
+                SimpleNamespace(tag="CashBalance", currency="USD", value=usd),
+                SimpleNamespace(tag="CashBalance", currency="TWD", value=amount),
+                SimpleNamespace(tag="CashBalance", currency="JPY", value=amount),
+            ]
+
+        def trades(self) -> list[object]:
+            return []
+
+        def openTrades(self) -> list[object]:
+            return []
+
+        def sleep(self, _seconds: float) -> None:
+            self.sleep_calls += 1
+            raise RuntimeError("This event loop is already running")
+
+        def disconnect(self) -> None:
+            return None
+
+    fake = FakeIB()
+    placed: list[dict[str, object]] = []
+
+    async def connect(self: PaperGateway) -> list[str]:
+        self._ib = fake
+        return [PIN]
+
+    def place_fx(_self: PaperGateway, _ib: object, spec: dict[str, object]) -> None:
+        placed.append(spec)
+
+    async def quick(seconds: float) -> None:
+        assert seconds > 0
+        fake.filled = True
+
+    monkeypatch.setattr(PaperGateway, "connect", connect)
+    monkeypatch.setattr(PaperGateway, "_place_fx", place_fx)
+    monkeypatch.setattr("auto_trading.execution.fx_convert.asyncio.sleep", quick)
+    gateway = PaperGateway(
+        Settings(ibkr_port=4002, ibkr_paper_account=PIN, trading_home=tmp_path),
+        client_id=11,
+    )
+
+    twd = assess(
+        _buy(
+            symbol="2317.TW",
+            currency="TWD",
+            market="TW",
+            quantity=1000,
+            limit_price=100.0,
+            client_id="cid-2317",
+            intent_id="intent-2317",
+        ),
+        cash_by_ccy={"USD": 10_000.0, "TWD": 0.0},
+        fx_to_base=_rates(),
+    )
+    assert twd.order is not None and twd.order.venue == "FXCONV"
+    confirmed = asyncio.run(gateway.convert_cash(twd.order, account=PIN))
+    assert confirmed is not None
+    assert confirmed["TWD"] + 1e-6 >= twd.order.required_target
+    assert fake.sleep_calls == 0
+    assert placed[0]["orderType"] == "FXCONV"
+    assert placed[0]["currency"] == "TWD"
+    assert placed[0]["exchange"] == "IDEALPRO"
+    assert placed[0]["action"] == "SELL"
+    assert placed[0]["symbol"] == "USD"
+
+    fake.filled = False
+    jpy = assess(
+        _buy(
+            symbol="7203.T",
+            currency="JPY",
+            market="JP",
+            quantity=100,
+            limit_price=1000.0,
+            client_id="cid-7203",
+            intent_id="intent-7203",
+        ),
+        cash_by_ccy={"USD": 10_000.0, "JPY": 0.0},
+        fx_to_base=_rates(),
+    )
+    assert jpy.order is not None and jpy.order.venue == "IDEALPRO"
+    confirmed_jpy = asyncio.run(gateway.convert_cash(jpy.order, account=PIN))
+    assert confirmed_jpy is not None
+    assert confirmed_jpy["JPY"] + 1e-6 >= jpy.order.required_target
+    assert fake.sleep_calls == 0
+    assert placed[1]["orderType"] == "MKT"
+    assert placed[1]["currency"] == "JPY"
+    assert placed[1]["venue"] == "IDEALPRO"
