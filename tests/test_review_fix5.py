@@ -183,6 +183,10 @@ def test_fake_gateway_refetches_stale_quotes_and_does_not_stick_on_r22(
         def reqMarketDataType(self, kind: int) -> None:
             log["mdtype"].append(kind)
 
+        async def qualifyContractsAsync(self, contract: Contract) -> list[Contract]:
+            contract.conId = 1
+            return [contract]
+
         def reqMktData(self, contract: Contract, *_args: object) -> Ticker:
             log["req"].append(contract.symbol)
             return Ticker()

@@ -231,6 +231,30 @@ class IbkrBroker:
             raise ConnectionError("paper gateway is not connected")
 
 
+def _contract_con_id(contract: Any) -> int:
+    """conId ib_async 2.x requires before it will hash a contract."""
+    try:
+        return int(getattr(contract, "conId", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+async def _qualify_contract(ib: Any, contract: Any) -> Any:
+    """Fill conId before reqMktData or placeOrder.
+
+    A fresh ``Stock(...)`` has no conId. ib_async 2.x then raises
+    ``ValueError: Contract ... can't be hashed because no conId``.
+    """
+    if _contract_con_id(contract):
+        return contract
+    qualified = await ib.qualifyContractsAsync(contract)
+    chosen = qualified[0] if qualified else None
+    if chosen is None or isinstance(chosen, list) or not _contract_con_id(chosen):
+        symbol = getattr(contract, "symbol", "")
+        raise ValueError(f"contract not qualified: {symbol}")
+    return chosen
+
+
 def _latch_home(trading_home: Path | None) -> Path:
     """Where an R0 violation writes the kill switch, even when no home was passed."""
     if trading_home is not None:
@@ -435,7 +459,10 @@ class PaperGateway:
             ib.disconnect()
 
     async def snapshot_quotes(self, symbols: list[str]) -> list[dict[str, Any]]:
-        """Delayed paper quotes from the Gateway. An empty list is a failure."""
+        """Delayed paper quotes. Qualify each contract before reqMktData.
+
+        One symbol that fails to qualify or tick is logged and skipped.
+        """
         from ib_async import Stock
 
         await self.connect()
@@ -444,17 +471,26 @@ class PaperGateway:
             ib.reqMarketDataType(3)
             found: list[dict[str, Any]] = []
             for symbol in symbols:
-                spec = map_contract(symbol)
-                contract = Stock(spec.ib_symbol, spec.exchange, spec.currency)
-                ticker = ib.reqMktData(contract, "", False, False)
                 try:
-                    received = await _wait_for_tick(ticker)
-                    row = _quote_row(symbol, ticker, received) if received is not None else None
-                    if row is not None:
-                        found.append(row)
-                finally:
-                    with contextlib.suppress(Exception):
-                        ib.cancelMktData(contract)
+                    spec = map_contract(symbol)
+                    contract = Stock(spec.ib_symbol, spec.exchange, spec.currency)
+                    contract = await _qualify_contract(ib, contract)
+                    ticker = ib.reqMktData(contract, "", False, False)
+                    try:
+                        received = await _wait_for_tick(ticker)
+                        row = _quote_row(symbol, ticker, received) if received is not None else None
+                        if row is not None:
+                            found.append(row)
+                    finally:
+                        with contextlib.suppress(Exception):
+                            ib.cancelMktData(contract)
+                except Exception as exc:
+                    log.warning(
+                        "quote snapshot failed for %s: %s: %s",
+                        symbol,
+                        type(exc).__name__,
+                        exc,
+                    )
             return found
         finally:
             self.disconnect()
@@ -619,6 +655,7 @@ class PaperGateway:
                 from ib_async import LimitOrder, Stock
 
                 contract = Stock(order["symbol"], order["exchange"], order["currency"])
+                contract = await _qualify_contract(self._ib, contract)
                 order["market"] = map_contract(intent.symbol).market
                 side = "BUY" if order["side"] == "BUY" else "SELL"
                 limit = quantize_to_tick(
