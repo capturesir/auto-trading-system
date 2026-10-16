@@ -12,7 +12,9 @@ Nothing here opens a session; the gateway does that on the paper ports only.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -441,19 +443,23 @@ def record_fx_attempt(
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
-def await_target_cash(
+async def await_target_cash(
     read_cash: Callable[[], Mapping[str, float] | None],
     *,
     target: str,
     required: float,
     timeout_sec: float = FX_CONFIRM_SEC,
     poll_sec: float = FX_POLL_SEC,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], Any] | None = None,
     monotonic: Callable[[], float] = time.monotonic,
     rejected: Callable[[], bool] | None = None,
 ) -> dict[str, float] | None:
     """Poll until ``target`` cash covers ``required``, or the FX order is rejected.
 
+    The pause is ``asyncio.sleep`` unless a test passes its own ``sleep``.
+    That yields the running loop so IB account and order updates can arrive.
+    ``ib.sleep`` is not used: it calls ``util.run`` and raises
+    ``RuntimeError`` when this coroutine's loop is already running.
     A timeout returns ``None``. The caller must not send the equity order.
     """
     deadline = monotonic() + timeout_sec
@@ -476,7 +482,9 @@ def await_target_cash(
                 return parsed
         if monotonic() >= deadline:
             return None
-        sleep(poll_sec)
+        paused = asyncio.sleep(poll_sec) if sleep is None else sleep(poll_sec)
+        if inspect.isawaitable(paused):
+            await paused
 
 
 _FX_REJECTED = frozenset({"cancelled", "inactive", "apicancelled"})
