@@ -13,7 +13,8 @@
 - `trading-strategy.timer`：每日 07:05（澳門，unit 上是 23:05 UTC）跑一次 `scripts/run_paper_intents_daily.sh`，裡面只呼叫 `auto-trading run-session`。倉庫不執行 enable，也不執行 disable。機器上若已經 enable，合併後只替換這個 unit，不要再加第二個 timer。
 - `trading-summary.timer`：每日 06:00（澳門）寫摘要。
 - `pool-rebuild.timer`：每日 06:00（香港）檢查是否該重建股票池。逾時 45 分鐘。
-- `trading-holdings-monitor.service`：有倉時每 30 秒寫 `hm_*` 價量提醒（`alert/1.0`，`alerts/pending/`）。模擬帳戶 `DUR243736`，`IB_CLIENT_ID_HOLDINGS=15`，`IB_READ_ONLY=1`。此 repo 只提交單元檔；enable 與 start 留待合併後另一步。
+- `trading-holdings-monitor.service`：有倉時每 30 秒寫 `hm_*` 價量提醒（`alert/1.0`，`alerts/pending/`）。模擬帳戶 `DUR243736`，`IB_CLIENT_ID_HOLDINGS=15`，`IB_READ_ONLY=1`。只寫提醒，不寫 intents，也不下單。此 repo 只提交單元檔；enable 與 start 留待合併後另一步。
+- `trading-intraday-reeval.timer`：盤中每 2 分鐘（可改 1–5 分鐘）重跑 07:05 同一套日線 confirm。用即時 last 當當日未收市 bar 的 provisional close。只讀 `state/intraday_watchlist.json`（07:05 runner 寫入）。`IB_CLIENT_ID_REEVAL=16`。`INTRADAY_REEVAL_WRITE_INTENTS` 與 `INTRADAY_REEVAL_WRITE_EXITS` 在單元裡預設是 0，確認後才改 1。出場 intents 由這個單元寫，不由 holdings-monitor 寫。啟用步驟見 `docs/intraday_reeval_enable_steps.md`。倉庫不執行 enable。
 - 外幣買進前換匯：`trading-submit.service` **沒有**預設 `TRADING_FX_PRECONVERT`。要先讓 `state/account.json` 寫出 `cash_by_ccy`，再用 drop-in 設成 `1`。步驟在 `docs/fx_preconvert_enable_steps.md`。未開時行為不變。R31（目標幣現金不足或換匯未確認）不送股票單，也不是永久拒絕。
 
 持倉快照的 VPS 路徑是 `/srv/trading/state/holdings_snapshot.json`。A 組讀 `/workspace/invest/b-group/holdings_snapshot.json`（symlink 指向 paper home 的 `state/holdings_snapshot.json`）。快照列在 `sync_vps_to_box.txt`，保持在 `sync_box_to_vps.txt` 之外。
