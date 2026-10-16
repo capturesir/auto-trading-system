@@ -165,6 +165,10 @@ class GateContext:
     order_seq: int = 1
     anomaly_breaker: bool = False
     notify_failure: bool = False
+    # Per-currency settled cash. None means the snapshot did not say.
+    # ``fx_cash_check`` is set only on the paper path when preconvert is on.
+    cash_by_ccy: dict[str, float] | None = None
+    fx_cash_check: bool = False
 
 
 class RiskGate:
@@ -249,6 +253,9 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         price = _price(intent, ctx)
         if price and abs(price / ctx.approval_price - 1) > ctx.reapproval_deviation:
             return "REAPPROVAL_REQUIRED"
+    fx_code = _r31(intent, ctx)
+    if fx_code:
+        return fx_code
     streak = _loss_streak(intent, ctx)
     if streak >= int(ctx.limits["R23_consecutive_loss_demote"]):
         ctx.r23_note = "r23_demote_count"
@@ -520,6 +527,30 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
         return "ABOVE_FAIR_VALUE"
     if intent.ref_price_at_create and abs(price / intent.ref_price_at_create - 1) > 0.10:
         return "STALE_REF"
+    return None
+
+
+def _r31(intent: OrderIntent, ctx: GateContext) -> str | None:
+    """Block a paper buy that would debit the settlement currency.
+
+    Off unless this context was built with the preconvert check. A covered
+    balance, a USD buy, and any reduce or exit pass. A shortfall stays R31
+    until a conversion has updated ``cash_by_ccy``.
+    """
+    if not ctx.fx_cash_check:
+        return None
+    if intent.mode != "paper" or intent.live_size_multiplier is not None:
+        return None
+    from auto_trading.execution.fx_convert import assess
+
+    attempt = assess(
+        intent,
+        cash_by_ccy=ctx.cash_by_ccy,
+        open_orders=ctx.open_orders,
+        fx_to_base=ctx.fx_to_base,
+    )
+    if attempt.action in {"convert", "block"}:
+        return "R31"
     return None
 
 

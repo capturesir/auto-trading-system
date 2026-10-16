@@ -14,6 +14,7 @@
 - `trading-summary.timer`：每日 06:00（澳門）寫摘要。
 - `pool-rebuild.timer`：每日 06:00（香港）檢查是否該重建股票池。逾時 45 分鐘。
 - `trading-holdings-monitor.service`：有倉時每 30 秒寫 `hm_*` 價量提醒（`alert/1.0`，`alerts/pending/`）。模擬帳戶 `DUR243736`，`IB_CLIENT_ID_HOLDINGS=15`，`IB_READ_ONLY=1`。此 repo 只提交單元檔；enable 與 start 留待合併後另一步。
+- 外幣買進前換匯：`trading-submit.service` **沒有**預設 `TRADING_FX_PRECONVERT`。要先讓 `state/account.json` 寫出 `cash_by_ccy`，再用 drop-in 設成 `1`。步驟在 `docs/fx_preconvert_enable_steps.md`。未開時行為不變。R31（目標幣現金不足或換匯未確認）不送股票單，也不是永久拒絕。
 
 持倉快照的 VPS 路徑是 `/srv/trading/state/holdings_snapshot.json`。A 組讀 `/workspace/invest/b-group/holdings_snapshot.json`（symlink 指向 paper home 的 `state/holdings_snapshot.json`）。快照列在 `sync_vps_to_box.txt`，保持在 `sync_box_to_vps.txt` 之外。
 
