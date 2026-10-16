@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import shutil
 import sys
 import types
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ from auto_trading.execution.risk_state import build_risk_limits, write_risk_limi
 from auto_trading.execution.services import (
     _PERMANENT_REJECTS,
     _REDUCING_BLOCK_ALERT_AFTER,
+    _refresh_quotes,
     account_once,
     submit_once,
 )
@@ -436,6 +438,10 @@ def test_receipt_time_is_the_tick_callback_not_the_end_of_the_wait(
         def reqMarketDataType(self, _kind: int) -> None:
             return None
 
+        async def qualifyContractsAsync(self, contract: Contract) -> list[Contract]:
+            contract.conId = 1
+            return [contract]
+
         def reqMktData(self, _contract: Contract, *_args: object) -> Ticker:
             ticker = Ticker()
             holder["ticker"] = ticker
@@ -521,3 +527,173 @@ def test_receipt_time_is_the_tick_callback_not_the_end_of_the_wait(
     )
     with pytest.raises(RiskRejected, match="R22"):
         RiskGate(ctx).allow(intent)
+
+
+def test_snapshot_quotes_qualifies_before_reqmktdata_and_skips_a_bad_symbol(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """012330.KS is qualified before reqMktData. A failed 2317.TW does not abort the batch."""
+    calls: list[tuple[object, ...]] = []
+
+    class Ticker:
+        def __init__(self) -> None:
+            self.last = float("nan")
+            self.delayedLast = 250000.0
+            self.marketDataType = 3
+            self.delayedLastTimestamp = datetime(2026, 10, 16, 1, 0, tzinfo=UTC)
+
+    class Contract:
+        def __init__(self, symbol: str, exchange: str, currency: str) -> None:
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.conId = 0
+
+    class IB:
+        async def connectAsync(self, host: str, port: int, clientId: int) -> None:
+            return None
+
+        def managedAccounts(self) -> list[str]:
+            return [PIN]
+
+        def reqMarketDataType(self, _kind: int) -> None:
+            return None
+
+        async def qualifyContractsAsync(self, contract: Contract) -> list[Contract | None]:
+            calls.append(("qualify", contract.symbol, contract.conId))
+            if contract.symbol == "2317":
+                return [None]
+            qualified = Contract(contract.symbol, contract.exchange, contract.currency)
+            qualified.conId = 17382528
+            return [qualified]
+
+        def reqMktData(self, contract: Contract, *_args: object) -> Ticker:
+            calls.append(("req", contract.symbol, contract.conId))
+            return Ticker()
+
+        def cancelMktData(self, contract: Contract) -> None:
+            calls.append(("cancel", contract.symbol, contract.conId))
+
+        def disconnect(self) -> None:
+            return None
+
+    fake = types.ModuleType("ib_async")
+    fake.IB = IB
+    fake.Stock = Contract
+    monkeypatch.setitem(sys.modules, "ib_async", fake)
+    monkeypatch.setenv("IBKR_PAPER_ACCOUNT", PIN)
+    monkeypatch.setenv("IB_PORT", "4002")
+    monkeypatch.setenv("IB_CLIENT_ID", "11")
+    monkeypatch.setenv("TRADING_HOME", str(tmp_path))
+    get_settings.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger="auto_trading.execution.ibkr"):
+            rows = asyncio.run(
+                PaperGateway(get_settings(), client_id=11).snapshot_quotes(["012330.KS", "2317.TW"])
+            )
+    finally:
+        get_settings.cache_clear()
+    assert [row["symbol"] for row in rows] == ["012330.KS"]
+    assert calls == [
+        ("qualify", "012330", 0),
+        ("req", "012330", 17382528),
+        ("cancel", "012330", 17382528),
+        ("qualify", "2317", 0),
+    ]
+    assert "2317.TW" in caplog.text
+    assert "contract not qualified" in caplog.text
+
+
+def test_place_order_qualifies_an_unqualified_contract(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[object, ...]] = []
+
+    class Contract:
+        con_id = 0
+
+        def __init__(self, symbol: str, exchange: str, currency: str) -> None:
+            self.symbol = symbol
+            self.exchange = exchange
+            self.currency = currency
+            self.conId = type(self).con_id
+
+    class LimitOrder:
+        def __init__(self, action: str, totalQuantity: float, lmtPrice: float) -> None:
+            self.action = action
+            self.totalQuantity = totalQuantity
+            self.lmtPrice = lmtPrice
+            self.orderRef = ""
+            self.account = ""
+            self.tif = ""
+
+    class IB:
+        def managedAccounts(self) -> list[str]:
+            return [PIN]
+
+        async def qualifyContractsAsync(self, contract: Contract) -> list[Contract]:
+            calls.append(("qualify", contract.symbol, contract.conId))
+            qualified = Contract(contract.symbol, contract.exchange, contract.currency)
+            qualified.conId = 17382528
+            return [qualified]
+
+        def placeOrder(self, contract: Contract, order: LimitOrder) -> None:
+            calls.append(("place", contract.symbol, contract.conId, order.orderRef))
+
+    fake = types.ModuleType("ib_async")
+    fake.Stock = Contract
+    fake.LimitOrder = LimitOrder
+    monkeypatch.setitem(sys.modules, "ib_async", fake)
+    monkeypatch.setenv("IBKR_PAPER_ACCOUNT", PIN)
+    monkeypatch.setenv("IB_PORT", "4002")
+    monkeypatch.setenv("TRADING_HOME", str(tmp_path))
+    get_settings.cache_clear()
+
+    def intent(client_id: str) -> OrderIntent:
+        return OrderIntent(
+            client_id=client_id,
+            symbol="012330.KS",
+            side=OrderSide.BUY,
+            quantity=1,
+            limit_price=250000,
+            account=PIN,
+        )
+
+    try:
+        gateway = PaperGateway(get_settings(), client_id=11)
+        gateway._ib = IB()
+        asyncio.run(gateway._submit_connected(intent("cid-qualify")))
+        assert calls == [("qualify", "012330", 0), ("place", "012330", 17382528, "cid-qualify")]
+        calls.clear()
+        Contract.con_id = 424242
+        asyncio.run(gateway._submit_connected(intent("cid-ready")))
+        assert calls == [("place", "012330", 424242, "cid-ready")]
+    finally:
+        Contract.con_id = 0
+        get_settings.cache_clear()
+
+
+def test_refresh_quotes_logs_the_exception_message(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    message = (
+        "Contract Stock(symbol='012330', exchange='KRX', currency='KRW') "
+        "can't be hashed because no conId"
+    )
+
+    async def boom(self: PaperGateway, symbols: list[str]) -> list[dict[str, object]]:
+        raise ValueError(message)
+
+    monkeypatch.setenv("TRADING_GATEWAY_CONNECT", "1")
+    monkeypatch.setenv("IBKR_PAPER_ACCOUNT", PIN)
+    monkeypatch.setenv("IB_PORT", "4002")
+    monkeypatch.setenv("TRADING_HOME", str(tmp_path))
+    monkeypatch.setattr(PaperGateway, "snapshot_quotes", boom)
+    get_settings.cache_clear()
+    try:
+        with caplog.at_level(logging.WARNING, logger="auto_trading.execution.services"):
+            quotes = _refresh_quotes(tmp_path, NOW, ["012330.KS"])
+    finally:
+        get_settings.cache_clear()
+    assert quotes == {}
+    assert message in caplog.text

@@ -1204,7 +1204,7 @@ def _refresh_quotes(home: Path, now: datetime, symbols: list[str]) -> dict[str, 
         gateway = PaperGateway(get_settings(), client_id=int(os.environ.get("IB_CLIENT_ID", "11")))
         rows = asyncio.run(gateway.snapshot_quotes(needed))
     except Exception as exc:
-        log.warning("quote refresh failed: %s", type(exc).__name__)
+        log.warning("quote refresh failed: %s: %s", type(exc).__name__, exc)
         return quotes
     if not rows:
         return quotes
