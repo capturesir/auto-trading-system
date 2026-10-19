@@ -217,12 +217,29 @@ def _roll_r9(home: Path, now: datetime, account: dict[str, Any]) -> bool:
     return True
 
 
-def oms_once(home: Path, now: datetime) -> dict[str, Any]:
-    """One OMS pass. Summary and pool rebuild stay on their timers."""
+def oms_once(
+    home: Path,
+    now: datetime,
+    *,
+    fills: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """One OMS pass. Summary and pool rebuild stay on their timers.
+
+    Executions come from ``fills`` or from ``state/executions.json``. This
+    loop does not open a Gateway socket; submit and account publish the file.
+    """
     home.mkdir(parents=True, exist_ok=True)
     errors: list[str] = []
     state = {"rolled": False}
     _step(home, "approved_hash", lambda: audit_confirmed_hashes(home, now), errors)
+
+    def _fills() -> dict[str, Any]:
+        from auto_trading.execution.fills import ingest_broker_fills, read_execution_snapshot
+
+        rows = list(fills) if fills is not None else read_execution_snapshot(home)
+        return ingest_broker_fills(home, rows, now=now)
+
+    _step(home, "fills", _fills, errors)
 
     def _heartbeat() -> None:
         journal = TradeJournal(home)
@@ -522,6 +539,15 @@ def account_once(
         payload["fx_to_base"] = fx_saved
         store_rates(home, fx_saved)
     _write_json(home / "state" / "account.json", payload)
+    executions = data.get("executions")
+    if isinstance(executions, list):
+        from auto_trading.execution.fills import write_execution_snapshot
+
+        write_execution_snapshot(
+            home,
+            now,
+            [row for row in executions if isinstance(row, dict)],
+        )
     quotes = data.get("quotes")
     if isinstance(quotes, list) and quotes:
         from auto_trading.market.quotes import write_quotes
@@ -1889,26 +1915,39 @@ def submit_once(
     place: Callable[[OrderIntent], None] | None = None,
     readonly: bool | None = None,
     convert: Callable[..., Any] | None = None,
+    fills: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Engine intents, the full risk gate, approval, the journal, then the broker.
 
-    While ReadOnlyApi is yes the function returns before any of that work.
-    The same ``intent_id`` is not sent twice. A transient gate rejection stays
-    in the queue and is tried again later. Only ``_PERMANENT_REJECTS`` retires
-    an opening. An exit or protective stop is not retired by a gate rejection.
-    ``mode`` other than paper, and any size multiplier, never reach the broker.
+    While ReadOnlyApi is yes no order is sent. Executions already reported by
+    the Gateway are still recorded. The same ``intent_id`` is not sent twice.
+    A transient gate rejection stays in the queue and is tried again later.
+    Only ``_PERMANENT_REJECTS`` retires an opening. An exit or protective stop
+    is not retired by a gate rejection. ``mode`` other than paper, and any
+    size multiplier, never reach the broker.
 
     When ``TRADING_FX_PRECONVERT=1``, a BUY that settles in a currency other
     than USD is converted from USD first. R31 still blocks the equity order
     when that cash is short or the conversion is not confirmed.
     """
     from auto_trading.execution.approvals import queue_order
+    from auto_trading.execution.fills import sync_fills
     from auto_trading.execution.fx_convert import fx_preconvert_enabled, reserve_target
     from auto_trading.risk.gate import evaluate
 
+    try:
+        fill_report = sync_fills(home, now, fills=fills)
+    except Exception as exc:
+        log.warning("fill sync failed: %s: %s", type(exc).__name__, exc)
+        fill_report = {"recorded": [], "skipped": [], "unmatched": []}
     is_readonly = read_only_api() if readonly is None else readonly
     if is_readonly:
-        payload = {"status": "readonly", "sent": 0, "reason": "ReadOnlyApi"}
+        payload = {
+            "status": "readonly",
+            "sent": 0,
+            "reason": "ReadOnlyApi",
+            "fills_recorded": len(fill_report.get("recorded") or []),
+        }
         _write_json(home / "state" / "submit.json", payload)
         return payload
     audit_confirmed_hashes(home, now)
@@ -2093,6 +2132,7 @@ def submit_once(
         "skipped": skipped,
         "gated": gated,
         "rejected": rejected,
+        "fills_recorded": len(fill_report.get("recorded") or []),
     }
     _write_json(home / "state" / "submit.json", payload)
     return payload

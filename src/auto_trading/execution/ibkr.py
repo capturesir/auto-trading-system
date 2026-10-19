@@ -495,8 +495,18 @@ class PaperGateway:
         finally:
             self.disconnect()
 
+    async def snapshot_executions(self) -> list[dict[str, Any]]:
+        """Connect and return normalized paper executions. Client filter is 0."""
+        from auto_trading.execution.fills import read_ib_executions
+
+        await self.connect()
+        try:
+            return await read_ib_executions(self._ib, self.settings.ibkr_paper_account)
+        finally:
+            self.disconnect()
+
     async def snapshot_account(self) -> dict[str, Any]:
-        """Connect, check R0, and return NLV, positions, and open orders."""
+        """Connect, check R0, and return NLV, positions, open orders, and executions."""
         accounts = await self.connect()
         ib = self._ib
         try:
@@ -512,6 +522,7 @@ class PaperGateway:
                         "symbol": str(contract.symbol),
                         "qty": float(pos.position),
                         "avg": float(pos.avgCost),
+                        "con_id": _contract_con_id(contract),
                         "currency": str(getattr(contract, "currency", "") or ""),
                         "exchange": str(
                             getattr(contract, "primaryExchange", "")
@@ -543,8 +554,14 @@ class PaperGateway:
                         ),
                     }
                 )
+            from auto_trading.execution.fills import read_ib_executions
             from auto_trading.execution.fx_convert import cash_by_currency
 
+            try:
+                executions = await read_ib_executions(ib, self.settings.ibkr_paper_account)
+            except Exception as exc:
+                log.warning("execution snapshot failed: %s: %s", type(exc).__name__, exc)
+                executions = []
             snapshot = {
                 "accounts": accounts,
                 "nlv": nlv,
@@ -552,6 +569,7 @@ class PaperGateway:
                 "fx_to_base": rates_from_account_values(values),
                 "positions": positions,
                 "open_orders": open_orders,
+                "executions": executions,
             }
             balances = cash_by_currency(values)
             if balances is not None:

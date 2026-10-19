@@ -52,7 +52,10 @@ class TradeJournal:
                     price REAL,
                     quantity REAL,
                     fee REAL,
-                    ts_utc TEXT
+                    ts_utc TEXT,
+                    perm_id INTEGER,
+                    exchange TEXT,
+                    booked INTEGER NOT NULL DEFAULT 0
                 );
                 CREATE TABLE IF NOT EXISTS audit_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,6 +226,7 @@ class TradeJournal:
             self._migrate_orders(conn)
             self._migrate_intents(conn)
             self._migrate_anomaly(conn)
+            self._migrate_executions(conn)
 
     def _create_approvals(self, conn: sqlite3.Connection) -> None:
         """Approvals table. The check value is filled from the mode constant."""
@@ -328,6 +332,18 @@ class TradeJournal:
         if "strategy_id" not in present:
             conn.execute("ALTER TABLE anomaly_events ADD COLUMN strategy_id TEXT")
 
+    def _migrate_executions(self, conn: sqlite3.Connection) -> None:
+        """Perm id, exchange, and the booking flag on journals created earlier."""
+        present = {row[1] for row in conn.execute("PRAGMA table_info(executions)")}
+        additions = {
+            "perm_id": "ALTER TABLE executions ADD COLUMN perm_id INTEGER",
+            "exchange": "ALTER TABLE executions ADD COLUMN exchange TEXT",
+            "booked": "ALTER TABLE executions ADD COLUMN booked INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, statement in additions.items():
+            if name not in present:
+                conn.execute(statement)
+
     def record_intent(
         self,
         intent: dict[str, Any],
@@ -371,6 +387,8 @@ class TradeJournal:
         quantity: float,
         fee: float | None = None,
         when: datetime | None = None,
+        perm_id: int | None = None,
+        exchange: str | None = None,
     ) -> None:
         ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
         row = {
@@ -388,20 +406,44 @@ class TradeJournal:
                 """
                 INSERT INTO executions (
                     fill_id, intent_id, client_id, symbol,
-                    price, quantity, fee, ts_utc
+                    price, quantity, fee, ts_utc, perm_id, exchange, booked
                 )
-                VALUES (
-                    :fill_id, :intent_id, :client_id, :symbol,
-                    :price, :quantity, :fee, :ts_utc
-                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """,
-                row,
+                (
+                    fill_id,
+                    intent_id,
+                    client_id,
+                    symbol,
+                    price,
+                    quantity,
+                    fee,
+                    ts,
+                    perm_id,
+                    exchange,
+                ),
             )
+        self._append_fill_export(row, perm_id=perm_id, exchange=exchange)
+
+    def _append_fill_export(
+        self,
+        row: dict[str, Any],
+        *,
+        perm_id: int | None = None,
+        exchange: str | None = None,
+    ) -> None:
+        """JSONL keeps the extra broker ids. CSV stays on the original columns."""
+        ts = str(row["ts_utc"])
+        logged = dict(row)
+        if perm_id is not None:
+            logged["perm_id"] = perm_id
+        if exchange:
+            logged["exchange"] = exchange
         day = ts[:10].replace("-", "")
         log = self.home / "logs" / f"events_{day}.jsonl"
         log.parent.mkdir(parents=True, exist_ok=True)
         with log.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            handle.write(json.dumps(logged, ensure_ascii=False) + "\n")
         export = self.home / "exports" / f"journal_{ts[:7].replace('-', '')}.csv"
         export.parent.mkdir(parents=True, exist_ok=True)
         new_file = not export.exists()
@@ -411,6 +453,81 @@ class TradeJournal:
             if new_file:
                 writer.writeheader()
             writer.writerow(row)
+
+    def has_execution(self, fill_id: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM executions WHERE fill_id = ?",
+                (fill_id,),
+            ).fetchone()
+        return row is not None
+
+    def execution_booked(self, fill_id: str) -> bool:
+        """True once this exec id has already updated a strategy position."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT booked FROM executions WHERE fill_id = ?",
+                (fill_id,),
+            ).fetchone()
+        if row is None or row["booked"] is None:
+            return False
+        return bool(row["booked"])
+
+    def mark_execution_booked(self, fill_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE executions SET booked = 1 WHERE fill_id = ?",
+                (fill_id,),
+            )
+
+    def execution_quantity(self, client_id: str) -> float:
+        """Shares already stored for this order reference."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(quantity), 0) AS qty FROM executions WHERE client_id = ?",
+                (client_id,),
+            ).fetchone()
+        return float(row["qty"] or 0)
+
+    def order_context(self, order_id: str) -> dict[str, Any] | None:
+        """Order row plus the intent fields a fill needs to book."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT o.order_id, o.intent_id, o.symbol, o.state,
+                       i.strategy_id, i.payload_json
+                FROM orders o
+                LEFT JOIN intents i ON i.intent_id = o.intent_id
+                WHERE o.order_id = ?
+                """,
+                (order_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        payload: dict[str, Any] = {}
+        if row["payload_json"]:
+            try:
+                loaded = json.loads(row["payload_json"])
+            except json.JSONDecodeError:
+                loaded = None
+            if isinstance(loaded, dict):
+                payload = loaded
+        raw_qty = payload.get("quantity", payload.get("qty"))
+        try:
+            quantity = None if raw_qty is None else float(raw_qty)
+        except (TypeError, ValueError):
+            quantity = None
+        parent = payload.get("parent_intent_id")
+        return {
+            "order_id": str(row["order_id"]),
+            "intent_id": str(row["intent_id"]),
+            "symbol": str(row["symbol"]),
+            "state": str(row["state"]),
+            "strategy_id": None if row["strategy_id"] is None else str(row["strategy_id"]),
+            "quantity": quantity,
+            "side": str(payload.get("side") or ""),
+            "parent_intent_id": None if parent in (None, "") else str(parent),
+        }
 
     def audit(self, action: str, detail: dict[str, Any], *, when: datetime | None = None) -> None:
         ts = (when or datetime.now(UTC)).isoformat(timespec="seconds")
