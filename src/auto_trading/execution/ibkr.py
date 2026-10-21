@@ -287,6 +287,8 @@ def _quote_block(intent: OrderIntent) -> str | None:
 
 
 # How long a snapshot waits for a price and a timestamp tick. Not a fixed sleep.
+# Same bound ib_async uses while synchronizing account updates on connect.
+_PORTFOLIO_WAIT_SEC = 4.0
 _QUOTE_WAIT_SEC = 2.0
 
 
@@ -414,6 +416,54 @@ async def _wait_for_tick(ticker: Any) -> datetime | None:
                 event -= _note
 
 
+def _listed_portfolio(ib: Any, account: str) -> list[Any]:
+    """Portfolio rows for ``account``, or every account when that book is empty."""
+    portfolio = getattr(ib, "portfolio", None)
+    if not callable(portfolio):
+        return []
+    if account:
+        try:
+            rows = list(portfolio(account))
+        except Exception:
+            rows = []
+        if rows:
+            return rows
+    try:
+        return list(portfolio())
+    except TypeError:
+        return []
+    except Exception as exc:
+        log.warning("portfolio read failed: %s: %s", type(exc).__name__, exc)
+        return []
+
+
+async def load_portfolio_marks(ib: Any, account: str = "") -> list[Any]:
+    """Portfolio items, which carry market value and unrealized P&L.
+
+    ``positions()`` only has quantity and average cost. Connect requests
+    account updates when there is a single managed account. If that book is
+    still empty while positions exist, ask once more and stop after a few
+    seconds so a second subscription cannot stall the snapshot.
+    """
+    marks = _listed_portfolio(ib, account)
+    if marks:
+        return marks
+    try:
+        held = list(ib.positions())
+    except Exception:
+        held = []
+    if not held:
+        return []
+    request = getattr(ib, "reqAccountUpdatesAsync", None)
+    if not callable(request):
+        return []
+    try:
+        await asyncio.wait_for(request(account or ""), timeout=_PORTFOLIO_WAIT_SEC)
+    except Exception as exc:
+        log.warning("portfolio update failed: %s: %s", type(exc).__name__, exc)
+    return _listed_portfolio(ib, account)
+
+
 class PaperGateway:
     """Real ``ib_async`` session. Not constructed by tests or CI.
 
@@ -506,31 +556,29 @@ class PaperGateway:
             self.disconnect()
 
     async def snapshot_account(self) -> dict[str, Any]:
-        """Connect, check R0, and return NLV, positions, open orders, and executions."""
+        """Connect, check R0, and return NLV, positions, open orders, and executions.
+
+        Position rows keep ``avg`` and also carry ``avg_cost``. Market value
+        and unrealized P&L come from portfolio marks, in the system base
+        currency, when IB has sent them.
+        """
         accounts = await self.connect()
         ib = self._ib
         try:
             values = list(ib.accountValues())
             nlv = net_liquidation_base(values)
+            from auto_trading.execution.account_positions import (
+                amount_in_system_base,
+                rows_from_broker,
+            )
             from auto_trading.execution.fx import rates_from_account_values, total_cash_base
 
-            positions: list[dict[str, Any]] = []
-            for pos in ib.positions():
-                contract = pos.contract
-                positions.append(
-                    {
-                        "symbol": str(contract.symbol),
-                        "qty": float(pos.position),
-                        "avg": float(pos.avgCost),
-                        "con_id": _contract_con_id(contract),
-                        "currency": str(getattr(contract, "currency", "") or ""),
-                        "exchange": str(
-                            getattr(contract, "primaryExchange", "")
-                            or getattr(contract, "exchange", "")
-                            or ""
-                        ),
-                    }
-                )
+            marks = await load_portfolio_marks(ib, self.settings.ibkr_paper_account)
+
+            def _convert(amount: float) -> float | None:
+                return amount_in_system_base(amount, values)
+
+            positions = rows_from_broker(list(ib.positions()), marks, convert=_convert)
             open_orders: list[dict[str, Any]] = []
             for trade in ib.openTrades():
                 order = trade.order

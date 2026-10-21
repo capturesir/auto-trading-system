@@ -512,6 +512,8 @@ def account_once(
         day_start = nlv
     else:
         day_start = float(previous.get("day_start_nlv") or nlv)
+    from auto_trading.dashboard.holdings import canonicalize_positions
+
     payload = {
         "schema_version": "account/1.0",
         "at": now.isoformat(timespec="seconds"),
@@ -520,7 +522,7 @@ def account_once(
         "nlv": nlv,
         "hwm": hwm,
         "day_start_nlv": day_start,
-        "positions": list(data.get("positions") or []),
+        "positions": canonicalize_positions(list(data.get("positions") or []), nlv=nlv),
         "open_orders": list(data.get("open_orders") or []),
         "gateway_logged_in": True,
     }
