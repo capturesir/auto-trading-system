@@ -556,11 +556,18 @@ def account_once(
     if isinstance(executions, list):
         from auto_trading.execution.fills import write_execution_snapshot
 
-        write_execution_snapshot(
-            home,
-            now,
-            [row for row in executions if isinstance(row, dict)],
-        )
+        try:
+            write_execution_snapshot(
+                home,
+                now,
+                [row for row in executions if isinstance(row, dict)],
+            )
+        except OSError as exc:
+            log.warning(
+                "execution snapshot skipped: %s: %s",
+                type(exc).__name__,
+                exc,
+            )
     quotes = data.get("quotes")
     if isinstance(quotes, list) and quotes:
         from auto_trading.market.quotes import write_quotes

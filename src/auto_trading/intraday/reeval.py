@@ -33,7 +33,7 @@ from auto_trading.backtest.engine import (
     plan_session,
 )
 from auto_trading.backtest.risk_sim import RiskSimulator
-from auto_trading.execution.fx import load_rates
+from auto_trading.execution.fx import currencies_for_tickers, fill_missing_rates, load_rates
 from auto_trading.execution.strategy_book import (
     REPO_ROOT,
     load_approved,
@@ -236,7 +236,10 @@ def run_once(
     else:
         prices = dict(quotes)
     bars = _load_cache(cache, sorted(set(tickers)))
-    rates = load_rates(home, account if isinstance(account, dict) else None)
+    rates = fill_missing_rates(
+        load_rates(home, account if isinstance(account, dict) else None),
+        currencies_for_tickers(tickers),
+    )
     queued: dict[tuple[str, int], list[Any]] = {}
     loaded: dict[tuple[str, int], tuple[dict[str, Any], str]] = {}
     reports: list[dict[str, Any]] = []
@@ -486,6 +489,10 @@ def _evaluate_entry(
         )
     except UnknownCondition:
         row["reason"] = "unsupported_trigger"
+        return row
+    except KeyError as exc:
+        log.warning("skip missing_fx ticker=%s key=%s", ticker, exc)
+        row["reason"] = "missing_fx"
         return row
     orders = [order for order in orders if order.ticker == ticker and order.kind == "ENTRY"]
     if not orders:

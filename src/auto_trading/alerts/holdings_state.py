@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -20,20 +21,43 @@ STATE_NAME = "holdings_monitor.json"
 
 
 def atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    """Replace ``path`` via ``*.tmp``, fsync, and rename."""
+    """Replace ``path`` via a unique temp file, fsync, and rename.
+
+    The temp name includes the process id and a clock so two writers of the
+    same path do not rename one shared ``*.tmp``. A missing temp on rename
+    is retried once. The destination is left unchanged when both attempts fail.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
     text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    with temporary.open("w", encoding="utf-8") as handle:
-        handle.write(text)
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temporary, path)
-    directory = os.open(path.parent, os.O_RDONLY)
+    missing: FileNotFoundError | None = None
+    for _attempt in range(2):
+        try:
+            _write_unique(path, text)
+        except FileNotFoundError as exc:
+            missing = exc
+            path.parent.mkdir(parents=True, exist_ok=True)
+            continue
+        directory = os.open(path.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+        return
+    if missing is not None:
+        raise missing
+
+
+def _write_unique(path: Path, text: str) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{time.time_ns()}.tmp")
     try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
+        with temporary.open("w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def state_path(trading_home: Path) -> Path:
