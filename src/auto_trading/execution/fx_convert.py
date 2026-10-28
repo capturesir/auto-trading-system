@@ -1,12 +1,16 @@
-"""Paper-only cash conversion before a foreign-currency buy.
+"""Paper-only foreign-currency cash check before a buy.
 
-DUR243736 keeps its spendable cash in USD. A buy that settles in another
-currency (KRW, TWD, HKD, JPY, and the rest) must already have that cash,
-including the equity commission and a fee buffer. Otherwise the stock order
-would open a debit in the target currency.
+HKD and JPY (and the other IdealPro currencies) still preconvert from USD
+when ``TRADING_FX_PRECONVERT=1``. That flag does not apply to TWD or KRW.
 
-The check is off until ``TRADING_FX_PRECONVERT=1``. JPY and HKD go out as
-IdealPro FX. KRW and TWD go out as an IBKR cash conversion (``FXCONV``).
+Taiwan and Korea buys use mode A (補7b #19). Enough target-currency cash
+sends the stock and nothing else. A shortfall sends the stock only when
+``TWKR_AUTO_FX_VERIFIED=1`` and USD plus the HKD cash R7 already treats as
+spendable cover the estimated cost; IB converts on the fill. Otherwise the
+gate holds the stock. This module never builds IdealPro, FXCONV, or Convert
+Currency orders for TWD or KRW, and it never places an order to clear a
+negative TWD or KRW balance.
+
 Nothing here opens a session; the gateway does that on the paper ports only.
 """
 
@@ -37,8 +41,13 @@ MIN_FX_FEE_USD = 2.0
 FX_CONFIRM_SEC = 30.0
 FX_POLL_SEC = 0.5
 ENV_FLAG = "TRADING_FX_PRECONVERT"
+ENV_TWKR_AUTO_FX = "TWKR_AUTO_FX_VERIFIED"
+TWKR_CCY = frozenset({"TWD", "KRW"})
+REASON_BASE_CASH = "R7_BASE_CASH"
+REASON_UNVERIFIED = "R31_TWKR_AUTO_FX_UNVERIFIED"
+REASON_DEFICIT = "fx_target_cash_deficit"
 
-# IdealPro quotes a spot book. KRW and TWD do not, so those use FXCONV.
+# IdealPro quotes a spot book. TWD and KRW are not on that path.
 IDEALPRO_CCY = frozenset(
     {
         "HKD",
@@ -69,9 +78,25 @@ _SKIP_CCY = frozenset({"", "BASE"})
 
 
 def fx_preconvert_enabled(env: Mapping[str, str] | None = None) -> bool:
-    """True only when the paper submit path is asked to convert first."""
+    """True only when the paper submit path preconverts IdealPro currencies."""
     source = os.environ if env is None else env
     return str(source.get(ENV_FLAG, "")).strip() == "1"
+
+
+def twkr_auto_fx_verified(env: Mapping[str, str] | None = None) -> bool:
+    """Mode A is armed only when ops set ``TWKR_AUTO_FX_VERIFIED=1``.
+
+    Unset or any other value stays off. That is the fail-safe after the
+    2026-10-28 paper auto-FX check: the result is known, but a stock order
+    that depends on it still waits for this flag.
+    """
+    source = os.environ if env is None else env
+    return str(source.get(ENV_TWKR_AUTO_FX, "")).strip() == "1"
+
+
+def standalone_fx_forbidden(currency: str) -> bool:
+    """TWD and KRW never get a standalone Gateway FX order."""
+    return currency.strip().upper() in TWKR_CCY
 
 
 def _field(item: Any, name: str) -> str:
@@ -158,6 +183,13 @@ def opening_foreign_buy(intent: OrderIntent) -> bool:
     return bool(currency) and currency != FUNDING_CCY
 
 
+def opening_twkr_buy(intent: OrderIntent) -> bool:
+    """Paper BUY entry/add that settles in TWD or KRW."""
+    if not opening_foreign_buy(intent):
+        return False
+    return trade_currency(intent) in TWKR_CCY
+
+
 def _session_day(intent: OrderIntent) -> date:
     if intent.valid_from is not None:
         return intent.valid_from.date()
@@ -226,6 +258,28 @@ def usd_for_shortfall(
         return None
     raw = shortfall_target * target_rate / usd_rate + MIN_FX_FEE_USD
     return _ceil_cent(raw)
+
+
+def usd_equivalent(amount: float, currency: str, fx_to_base: Mapping[str, float]) -> float | None:
+    """``amount`` of ``currency`` restated in USD via the HKD-per-unit map.
+
+    A non-positive amount is zero and does not need a rate. A missing or
+    non-positive rate fails closed with ``None``.
+    """
+    if amount <= 0:
+        return 0.0
+    per_ccy = fx_to_base.get(currency)
+    per_usd = fx_to_base.get(FUNDING_CCY)
+    if per_ccy is None or per_usd is None:
+        return None
+    try:
+        ccy_rate = float(per_ccy)
+        usd_rate = float(per_usd)
+    except (TypeError, ValueError):
+        return None
+    if ccy_rate <= 0 or usd_rate <= 0:
+        return None
+    return amount * ccy_rate / usd_rate
 
 
 def _pending_local(
@@ -303,6 +357,7 @@ class FxAttempt:
     required_target: float | None = None
     have_target: float | None = None
     usd_qty: float | None = None
+    hkd_qty: float | None = None
 
 
 def fx_order_ref(intent: OrderIntent) -> str:
@@ -312,8 +367,14 @@ def fx_order_ref(intent: OrderIntent) -> str:
 
 
 def venue_for(currency: str) -> tuple[str, str]:
-    """Return ``(venue, order_type)``. IdealPro uses a market FX order."""
-    if currency in IDEALPRO_CCY:
+    """Return ``(venue, order_type)``. IdealPro uses a market FX order.
+
+    TWD and KRW raise. Mode A never builds a venue for those currencies.
+    """
+    code = currency.strip().upper()
+    if code in TWKR_CCY:
+        raise ValueError("standalone FX for TWD/KRW is retired")
+    if code in IDEALPRO_CCY:
         return "IDEALPRO", "MKT"
     return "FXCONV", "FXCONV"
 
@@ -352,18 +413,133 @@ def _build_order(intent: OrderIntent, target: str, usd_qty: float, required: flo
     )
 
 
+def _broker_amount(cash: Mapping[str, float] | None, currency: str) -> float | None:
+    if cash is None:
+        return None
+    try:
+        return float(cash.get(currency, 0.0) or 0.0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _assess_twkr(
+    intent: OrderIntent,
+    *,
+    cash_by_ccy: Mapping[str, float] | None,
+    open_orders: Sequence[Any],
+    fx_to_base: Mapping[str, float] | None,
+    broker_cash: Mapping[str, float] | None,
+    verified: bool | None,
+) -> FxAttempt:
+    """Mode A for a paper TWD or KRW opening buy. Never returns an FX order."""
+    target = trade_currency(intent)
+    if cash_by_ccy is None:
+        return FxAttempt("block", "unknown_balance")
+    required = required_target_cash(intent)
+    if required is None:
+        return FxAttempt("block", "unpriced")
+    rates: Mapping[str, float] = fx_to_base or {}
+    reported = broker_cash if broker_cash is not None else cash_by_ccy
+    balance = _broker_amount(reported, target)
+    have = available_cash(target, cash_by_ccy, open_orders, rates)
+    if balance is not None and balance < 0:
+        return FxAttempt(
+            "block",
+            "target_cash_deficit",
+            required_target=required,
+            have_target=have,
+        )
+    if have + 1e-6 >= required:
+        return FxAttempt(
+            "covered",
+            "target_cash",
+            required_target=required,
+            have_target=have,
+        )
+    shortfall = required - max(have, 0.0)
+    usd_need = usd_equivalent(shortfall, target, rates)
+    if usd_need is None:
+        return FxAttempt(
+            "block",
+            "no_fx_rate",
+            required_target=required,
+            have_target=have,
+        )
+    usd_have = available_cash(FUNDING_CCY, cash_by_ccy, open_orders, rates)
+    hkd_have = available_cash("HKD", cash_by_ccy, open_orders, rates)
+    hkd_as_usd = 0.0
+    if hkd_have > 0:
+        converted = usd_equivalent(hkd_have, "HKD", rates)
+        if converted is None and usd_have + 1e-6 < usd_need:
+            return FxAttempt(
+                "block",
+                "no_fx_rate",
+                required_target=required,
+                have_target=have,
+                usd_qty=usd_need,
+            )
+        hkd_as_usd = float(converted or 0.0)
+    if usd_have + hkd_as_usd + 1e-6 < usd_need:
+        return FxAttempt(
+            "block",
+            "usd_short",
+            required_target=required,
+            have_target=have,
+            usd_qty=usd_need,
+        )
+    armed = twkr_auto_fx_verified() if verified is None else bool(verified)
+    usd_used = min(max(usd_have, 0.0), usd_need)
+    remainder = max(usd_need - usd_used, 0.0)
+    hkd_used = 0.0
+    if remainder > 1e-9 and hkd_as_usd > 0 and hkd_have > 0:
+        hkd_used = remainder / hkd_as_usd * hkd_have
+    if not armed:
+        return FxAttempt(
+            "block",
+            "auto_fx_unverified",
+            required_target=required,
+            have_target=have,
+            usd_qty=usd_used,
+            hkd_qty=hkd_used,
+        )
+    return FxAttempt(
+        "covered",
+        "auto_fx",
+        required_target=required,
+        have_target=have,
+        usd_qty=usd_used,
+        hkd_qty=hkd_used,
+    )
+
+
 def assess(
     intent: OrderIntent,
     *,
     cash_by_ccy: Mapping[str, float] | None,
     open_orders: Sequence[Any] = (),
     fx_to_base: Mapping[str, float] | None = None,
+    broker_cash: Mapping[str, float] | None = None,
+    verified: bool | None = None,
 ) -> FxAttempt:
-    """Decide whether a paper buy still needs USD converted into the target currency."""
+    """Decide whether a paper buy may go out, or still needs an IdealPro conversion.
+
+    TWD and KRW never produce a conversion order. HKD, JPY, and the other
+    IdealPro currencies still do when the target cash is short and USD covers
+    the FX order.
+    """
     if intent.mode != "paper" or intent.live_size_multiplier is not None:
         return FxAttempt("block", "not_paper")
     if not opening_foreign_buy(intent):
         return FxAttempt("skip")
+    if opening_twkr_buy(intent):
+        return _assess_twkr(
+            intent,
+            cash_by_ccy=cash_by_ccy,
+            open_orders=open_orders,
+            fx_to_base=fx_to_base,
+            broker_cash=broker_cash,
+            verified=verified,
+        )
     if cash_by_ccy is None:
         return FxAttempt("block", "unknown_balance")
     required = required_target_cash(intent)
@@ -399,6 +575,50 @@ def assess(
         have_target=have,
         usd_qty=usd,
     )
+
+
+def twkr_gate_code(attempt: FxAttempt) -> str | None:
+    """Map a mode-A attempt onto a transient gate code. ``None`` lets the stock through."""
+    if attempt.action in {"covered", "skip"}:
+        return None
+    if attempt.reason == "not_paper":
+        return None
+    if attempt.reason == "auto_fx_unverified":
+        return REASON_UNVERIFIED
+    if attempt.reason == "target_cash_deficit":
+        return REASON_DEFICIT
+    return REASON_BASE_CASH
+
+
+def twkr_detail(
+    attempt: FxAttempt,
+    *,
+    phase: str,
+    account_base: str | None,
+    verified: bool,
+) -> dict[str, Any]:
+    """Fields stored on ``risk_checks.detail_json`` for a Taiwan or Korea cash decision."""
+    return {
+        "mode": "A",
+        "have_target": attempt.have_target,
+        "required_target": attempt.required_target,
+        "verified": verified,
+        "phase": phase,
+        "account_base": account_base,
+        "detail": attempt.reason or "target_cash",
+        "usd_qty": attempt.usd_qty,
+    }
+
+
+def reserve_funding(book: dict[str, float], attempt: FxAttempt) -> dict[str, float]:
+    """Hold the USD and HKD mode A already counted, so the next order cannot reuse them."""
+    if attempt.reason != "auto_fx":
+        return book
+    if attempt.usd_qty:
+        book["USD"] = float(book.get("USD", 0.0)) - float(attempt.usd_qty)
+    if attempt.hkd_qty:
+        book["HKD"] = float(book.get("HKD", 0.0)) - float(attempt.hkd_qty)
+    return book
 
 
 def reserve_target(cash_by_ccy: Mapping[str, float], intent: OrderIntent) -> dict[str, float]:
@@ -441,6 +661,148 @@ def record_fx_attempt(
     }
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+
+def _negative_targets(cash: Mapping[str, float] | None) -> dict[str, float]:
+    found: dict[str, float] = {}
+    if not isinstance(cash, Mapping):
+        return found
+    for currency in sorted(TWKR_CCY):
+        try:
+            amount = float(cash.get(currency, 0.0) or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if amount < 0:
+            found[currency] = amount
+    return found
+
+
+def write_fx_cash_gate(
+    home: Path,
+    *,
+    now: str,
+    reason: str | None,
+    verified: bool,
+    cash: Mapping[str, float] | None,
+    detail: Mapping[str, Any] | None = None,
+) -> None:
+    """Persist the latest mode-A decision and any negative TWD/KRW balances."""
+    path = home / "state" / "fx_cash_gate.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema_version": "fx_cash_gate/1.0",
+        "mode": "A",
+        "twkr_auto_fx_verified": bool(verified),
+        "reason": reason,
+        "target_cash_deficit": _negative_targets(cash),
+        "detail": dict(detail or {}),
+        "at": now,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def warn_if_base_not_usd(home: Path, base: str | None, when: str) -> None:
+    """Ops warning when the account base is present and is not USD.
+
+    This does not reject the order. ``BASE_CCY_NOT_USD`` is retired.
+    """
+    code = (base or "").strip().upper()
+    if not code or code == FUNDING_CCY:
+        return
+    folder = home / "state" / "fx_cash_hold"
+    folder.mkdir(parents=True, exist_ok=True)
+    marker = folder / "base_ccy_warn.txt"
+    if marker.is_file() and marker.read_text(encoding="utf-8").strip() == code:
+        return
+    from datetime import datetime
+
+    from auto_trading.alerts.critical import write_ops_notice
+
+    parsed = datetime.fromisoformat(when)
+    write_ops_notice(
+        home,
+        message_zh=(
+            f"帳戶基準貨幣為 {code}，不是 USD。"
+            "台／韓買單仍按模式 A 現金閘處理，不再以 BASE_CCY_NOT_USD 永久拒絕。"
+        ),
+        now=parsed,
+        kind="ops",
+    )
+    marker.write_text(code + "\n", encoding="utf-8")
+
+
+def note_target_cash_deficits(
+    home: Path,
+    cash: Mapping[str, float] | None,
+    when: str,
+) -> list[str]:
+    """Alert on negative TWD/KRW cash. Does not place a clearing FX order.
+
+    A currency that is negative for the first time writes one warning.
+    Repeating the same deficit does not write another. Cash back at zero
+    or above clears the hold so a later deficit can alert again.
+    """
+    from datetime import UTC, datetime
+
+    from auto_trading.alerts.critical import MACAU
+
+    deficits = _negative_targets(cash)
+    folder = home / "state" / "fx_cash_hold"
+    folder.mkdir(parents=True, exist_ok=True)
+    fresh: list[str] = []
+    for currency in sorted(TWKR_CCY):
+        marker = folder / f"{currency}.json"
+        if currency not in deficits:
+            if marker.is_file():
+                marker.unlink()
+            continue
+        amount = deficits[currency]
+        if marker.is_file():
+            marker.write_text(
+                json.dumps({"currency": currency, "cash": amount, "at": when}) + "\n",
+                encoding="utf-8",
+            )
+            continue
+        marker.write_text(
+            json.dumps({"currency": currency, "cash": amount, "at": when}) + "\n",
+            encoding="utf-8",
+        )
+        parsed = datetime.fromisoformat(when)
+        local = parsed.astimezone(MACAU)
+        stamp = local.strftime("%Y%m%dT%H%M%S")
+        document = {
+            "schema_version": "notice/1.0",
+            "kind": REASON_DEFICIT,
+            "level": "warn",
+            "severity": "warning",
+            "source": "execution",
+            "currency": currency,
+            "cash": amount,
+            "clear_fx": False,
+            "created_at": local.isoformat(timespec="seconds"),
+            "message_zh": (f"{currency} 現金為負（{amount}）。新開台／韓倉先停，不送 API 清負單。"),
+        }
+        text = json.dumps(document, ensure_ascii=False, indent=2) + "\n"
+        for relative in ("alerts/pending", "notifications/outbox"):
+            dest_dir = home / relative
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            target = dest_dir / f"{stamp}_fx_target_cash_deficit_{currency}.json"
+            temporary = target.with_suffix(".json.tmp")
+            temporary.write_text(text, encoding="utf-8")
+            os.replace(temporary, target)
+        fresh.append(currency)
+    if fresh:
+        from auto_trading.portfolio.journal import TradeJournal
+
+        moment = datetime.fromisoformat(when)
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        TradeJournal(home).audit(
+            REASON_DEFICIT,
+            {"currencies": {name: deficits[name] for name in fresh}, "clear_fx": False},
+            when=moment,
+        )
+    return fresh
 
 
 async def await_target_cash(

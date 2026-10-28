@@ -1,23 +1,32 @@
 # 模擬盤買進前換匯（paper only）
 
-帳戶 `DUR243736` 的可用現金主要是 USD。買進以其他幣別交割的股票（KRW、TWD、HKD、JPY 等）之前，必須先從 USD 換成足夠的目標幣，含股票佣金／稅與匯率緩衝，避免該幣現金變成借方。
+帳戶 `DUR243736` 的可用現金主要是 USD。這份步驟只涵蓋 **HKD／JPY 等 IdealPro 幣**。台幣與韓元不在這條路徑：不送 FXCONV、IdealPro，也不把 Convert Currency 當必經步驟。台／韓見下方「台／韓模式 A」。
 
 只做模擬。埠只有 4002 與 7497。沒有另一條路徑會對非模擬單換匯。
 
-## 行為
+## 行為（港／日 IdealPro）
 
-`TRADING_FX_PRECONVERT` 未設成 `1` 時，送單與風控和現在一樣：不換匯，也不套用 R31。
+`TRADING_FX_PRECONVERT` 未設成 `1` 時，港／日送單不預換，也不套用這條 R31。
 
-設成 `1` 之後，紙上路徑對 **BUY 的 ENTRY／ADD**，且結算幣不是 USD：
+設成 `1` 之後，紙上路徑對 **BUY 的 ENTRY／ADD**，且結算幣是 IdealPro 幣（HKD、JPY 等，**不是** TWD／KRW）：
 
 1. 目標幣需求 = 股數 × 限價 + 該市場買進佣金與稅 + 名目 × 1.20%（100 bps 緩衝 + 20 bps FX 佣金估計）。
 2. 讀 `cash_by_ccy`（已扣同幣未成交買單）。夠了就直接送股票單，不換匯。
 3. 不夠就計算短少。換出的 USD = 短少金額用 `fx_to_base`（每單位折合 HKD）換算後，再加 2 USD 最低費用，向上取到分。
-4. USD 夠：送 IB 換匯，等到目標幣餘額覆蓋需求，才送股票單。
-   - HKD、JPY（以及其餘 IdealPro 幣）是 IdealPro 市價 FX：賣出 USD。
-   - KRW、TWD 是 IB 現金轉換 `FXCONV`：同樣賣出 USD。
+4. USD 夠：送 IB IdealPro 市價 FX（賣出 USD），等到目標幣餘額覆蓋需求，才送股票單。
 5. 餘額檔沒有 `cash_by_ccy`、沒有匯率、USD 不夠、換匯被拒、或等到逾時（30 秒）仍不夠：風控回 **R31**，**不送股票單**。R31 留在佇列，下一輪再試，不是永久拒絕。
 6. 同一輪下一張單會先扣掉這一張已占用的目標幣，避免兩張單共用同一筆餘額。
+
+## 台／韓模式 A（補7b #19）
+
+不靠 `TRADING_FX_PRECONVERT`。紙上 BUY 的 ENTRY／ADD，結算幣 TWD 或 KRW：
+
+1. 目標幣現金（扣同輪占用）已覆蓋需求：直接送股，不換匯。
+2. 目標幣不足，且 `TWKR_AUTO_FX_VERIFIED=1`，而且 USD 加上既有可動用的 HKD 蓋得住估計成本：送股，依賴 IB 成交時自動換匯。不送獨立 FX。
+3. 上面的基準資金也不夠，或缺匯率：`R7_BASE_CASH`，不送股。
+4. 目標幣不足但基準資金夠、環境變數未開：`R31_TWKR_AUTO_FX_UNVERIFIED`，不送股。
+5. 成交後 TWD 或 KRW 現金為負：告警 `fx_target_cash_deficit`，新開台／韓倉停下，不送清負 FX。出場與減倉不受這道開倉閘影響。
+6. 帳戶基準不是 USD：只寫 ops 警告，不再用 `BASE_CCY_NOT_USD` 永久拒絕。
 
 USD 股票不在這條路徑裡，不會把其他幣換成 USD。出場、減倉、保護性停損也不換匯。
 
@@ -51,14 +60,16 @@ sudo systemctl daemon-reload
 sudo systemctl restart trading-submit.service
 ```
 
-`TRADING_GATEWAY_CONNECT=1` 時，送單行程才會自己連 Gateway 換匯。單元檔裡已經有這一行。測試或沒有 Gateway 的行程不要設 `TRADING_FX_PRECONVERT=1`，否則外幣買單會停在 R31。
+`TRADING_GATEWAY_CONNECT=1` 時，送單行程才會自己連 Gateway 換匯。單元檔裡已經有這一行。測試或沒有 Gateway 的行程不要設 `TRADING_FX_PRECONVERT=1`，否則港／日買單會停在 R31。
+
+台／韓要另開模式 A 時，在同一個 drop-in（或另一份）加 `Environment=TWKR_AUTO_FX_VERIFIED=1`。不要為 TWD／KRW 送 FXCONV。
 
 ## 驗收
 
-目標幣不夠、USD 也不夠付短少：`state/submit.json` 的 `sent` 是 0，`rejected` 含 `R31`，`fx_conversions.jsonl` 是 `usd_short`，Gateway 沒有該股票單，也沒有換匯單。
+港／日目標幣不夠、USD 也不夠付短少：`state/submit.json` 的 `sent` 是 0，`rejected` 含 `R31`，`fx_conversions.jsonl` 是 `usd_short`，Gateway 沒有該股票單，也沒有換匯單。
 
-目標幣不夠、USD 夠，且換匯成交後餘額覆蓋需求：先出現換匯單，`fx_conversions.jsonl` 為 `confirmed`，然後才有股票單。
+港／日目標幣不夠、USD 夠，且 IdealPro 成交後餘額覆蓋需求：先出現換匯單，`fx_conversions.jsonl` 為 `confirmed`，然後才有股票單。
 
-目標幣本來就夠：沒有換匯單，股票單直接送出。
+目標幣本來就夠：沒有換匯單，股票單直接送出。台／韓即使目標幣不夠，Gateway 也沒有 TWD／KRW 的 FXCONV 或 IdealPro 單。
 
-關掉時刪除 drop-in 再 reload、restart `trading-submit.service`。未設定變數時外幣買單恢復原本路徑，不再因 R31 停下。
+關掉時刪除 drop-in 再 reload、restart `trading-submit.service`。未設定 `TRADING_FX_PRECONVERT` 時港／日不再因 R31 停下。未設定 `TWKR_AUTO_FX_VERIFIED` 時，台／韓目標幣不足仍是 `R31_TWKR_AUTO_FX_UNVERIFIED`。

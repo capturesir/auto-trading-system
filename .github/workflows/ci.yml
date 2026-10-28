@@ -35,5 +35,8 @@ jobs:
       - name: Refuse real-account switches
         run: python scripts/check_paper_only.py
 
+      - name: No FXCONV for TW/KR
+        run: python scripts/check_twkr_no_fxconv.py
+
       - name: Approval literal and sync list
         run: python scripts/check_v08_ci.py
