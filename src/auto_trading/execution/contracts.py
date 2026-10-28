@@ -4,9 +4,11 @@
 been qualified against a paper Gateway are marked unverified for E1.
 
 Korean names use the six-digit local code, currency ``KRW``, and exchange
-``KRX``. On 2026-10-06 the paper Gateway qualified ``Stock('005930', 'KRX',
-'KRW')`` to conId 17382528, primaryExchange ``KRX``. SMART resolves to the
-same venue. ``KSE`` returns error 200 and is not sent. An empty qualify can
+``KRX``. A bare code such as ``005930`` is the same contract as ``005930.KS``;
+qualifying it as SMART+USD returns error 200. On 2026-10-06 the paper
+Gateway qualified ``Stock('005930', 'KRX', 'KRW')`` to conId 17382528,
+primaryExchange ``KRX``. SMART with currency KRW resolves to the same venue.
+``KSE`` returns error 200 and is not sent. An empty qualify can
 still mean the account has no Korea stock permission (Client Portal, Trading
 Permissions, Stocks, Korea). Residents of Korea and IBIN or IBSJ clients
 cannot enable that permission.

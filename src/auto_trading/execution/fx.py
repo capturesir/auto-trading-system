@@ -12,6 +12,9 @@ apply. Until a snapshot arrives, that table matches the backtest rates.
 from __future__ import annotations
 
 import json
+import logging
+import urllib.request
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +31,17 @@ DEFAULT_RATES_HKD: dict[str, float] = {
     "JPY": 0.052,
     "KRW": 0.0056,
 }
+
+# Yahoo ``CCY=X`` is units of that currency per one USD. ``HKD=X`` is the
+# exception: it is already HKD per one USD, which is the USD entry below.
+_PUBLIC_PER_USD: dict[str, str] = {
+    "USD": "HKD=X",
+    "TWD": "TWD=X",
+    "JPY": "JPY=X",
+    "KRW": "KRW=X",
+}
+
+log = logging.getLogger(__name__)
 
 
 def _field(item: Any, name: str) -> str:
@@ -177,7 +191,8 @@ def load_rates(home: Path, account: dict[str, Any] | None = None) -> dict[str, f
     """Snapshot rates, else the cached file, else the offline table.
 
     An explicit snapshot map is used as-is (plus HKD). Missing currencies
-    stay missing so the gate can refuse them.
+    stay missing so the gate can refuse them. Strategy sizing calls
+    :func:`fill_missing_rates` on a copy and does not write that copy back.
     """
     raw = account.get("fx_to_base") if isinstance(account, dict) else None
     if isinstance(raw, dict) and raw:
@@ -198,7 +213,7 @@ def load_rates(home: Path, account: dict[str, Any] | None = None) -> dict[str, f
     return dict(DEFAULT_RATES_HKD)
 
 
-def _positive(raw: dict[str, Any]) -> dict[str, float]:
+def _positive(raw: Mapping[str, Any]) -> dict[str, float]:
     rates: dict[str, float] = {}
     for key, value in raw.items():
         try:
@@ -208,3 +223,95 @@ def _positive(raw: dict[str, Any]) -> dict[str, float]:
         if rate > 0:
             rates[str(key)] = rate
     return rates
+
+
+def currencies_for_tickers(tickers: Iterable[str]) -> list[str]:
+    """Quote currencies for sizing. Unknown tickers are omitted."""
+    from auto_trading.market.instruments import describe
+
+    found: list[str] = []
+    for ticker in tickers:
+        try:
+            code = describe(str(ticker)).currency
+        except (TypeError, ValueError):
+            continue
+        if code and code not in found:
+            found.append(code)
+    return found
+
+
+def _fx_http_get(url: str) -> str:
+    request = urllib.request.Request(url, headers={"User-Agent": "paper-fx/1.0"})
+    with urllib.request.urlopen(request, timeout=8) as response:
+        return response.read().decode("utf-8")
+
+
+def _public_hkd_per_unit(
+    currency: str,
+    *,
+    getter: Callable[[str], str] | None,
+    usd_hkd: float | None,
+) -> float:
+    """HKD per one unit of ``currency`` from Yahoo. Raises when the quote fails."""
+    from auto_trading.market.yahoo import public_quote
+
+    pair = _PUBLIC_PER_USD.get(currency)
+    if pair is None:
+        raise ValueError(f"no public FX pair for {currency}")
+    price, _as_of = public_quote(pair, getter=getter or _fx_http_get)
+    if price <= 0:
+        raise ValueError(f"non-positive public FX quote for {currency}")
+    if currency == "USD":
+        return float(price)
+    if usd_hkd is None or usd_hkd <= 0:
+        raise ValueError(f"missing USD rate for {currency}")
+    return float(usd_hkd) / float(price)
+
+
+def fill_missing_rates(
+    rates: Mapping[str, float],
+    needed: Iterable[str],
+    *,
+    getter: Callable[[str], str] | None = None,
+) -> dict[str, float]:
+    """Copy snapshot rates and fill gaps from Yahoo for strategy sizing.
+
+    Existing positive rates are kept. HKD, when absent, is 1. A currency
+    Yahoo cannot price stays absent so the caller can skip that symbol.
+    This map is not written back to ``fx.json`` or the account snapshot:
+    the cash gate still sees only broker rates from :func:`load_rates`.
+    The offline ``DEFAULT_RATES_HKD`` table is not used here.
+    """
+    filled = {str(key).strip().upper(): value for key, value in _positive(rates).items()}
+    if "HKD" not in filled:
+        filled["HKD"] = 1.0
+        log.info("fx_fallback=identity currency=HKD rate=1")
+    wanted: list[str] = []
+    for raw in needed:
+        code = str(raw or "").strip().upper()
+        if code and code not in wanted:
+            wanted.append(code)
+    missing = [code for code in wanted if code not in filled]
+    if not missing:
+        return filled
+    ordered = sorted(missing, key=lambda code: (code != "USD", code))
+    usd_hkd = filled.get("USD")
+    for code in ordered:
+        if code != "USD" and (usd_hkd is None or usd_hkd <= 0):
+            try:
+                usd_hkd = _public_hkd_per_unit("USD", getter=getter, usd_hkd=None)
+            except Exception as exc:
+                log.warning("fx_fallback=skip currency=%s reason=%s", code, type(exc).__name__)
+                continue
+            filled["USD"] = usd_hkd
+            log.info("fx_fallback=yahoo currency=USD rate=%s", usd_hkd)
+        try:
+            rate = _public_hkd_per_unit(code, getter=getter, usd_hkd=usd_hkd)
+        except Exception as exc:
+            log.warning("fx_fallback=skip currency=%s reason=%s", code, type(exc).__name__)
+            continue
+        filled[code] = rate
+        if code == "USD":
+            usd_hkd = rate
+        log.info("fx_fallback=yahoo currency=%s rate=%s", code, rate)
+    return filled

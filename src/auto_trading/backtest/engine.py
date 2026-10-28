@@ -9,6 +9,7 @@ defaults to false. R9 uses ``cooldown_half_size`` (the shared cycle).
 from __future__ import annotations
 
 import hashlib
+import logging
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -30,6 +31,7 @@ from auto_trading.strategy.spec import INTERPRETER_VERSION, spec_hash
 from auto_trading.strategy.vocabulary import Series, atr_latest
 
 PRIORITY = ["sig_trend", "sig_pullback", "news_event", "fv_rotation"]
+log = logging.getLogger(__name__)
 
 
 class LookaheadError(Exception):
@@ -146,10 +148,40 @@ def _stop_parts(strategy: dict[str, Any]) -> tuple[float, float | None]:
     return 0.15, None
 
 
-def _fx(currency: str, rates: dict[str, float], base: str) -> float:
-    if base == "HKD":
-        return rates[currency]
-    return rates[currency] / rates["USD"]
+def _rate(rates: dict[str, float], currency: str) -> float | None:
+    raw = rates.get(currency)
+    if raw is None:
+        return None
+    try:
+        rate = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if rate <= 0:
+        return None
+    return rate
+
+
+def _fx(currency: str, rates: dict[str, float], base: str) -> float | None:
+    """Units of ``base`` per one unit of ``currency``.
+
+    A missing quote is ``None``. Callers skip that symbol instead of raising
+    ``KeyError``. One HKD in an HKD book is 1, and one USD in a USD book is 1.
+    """
+    code = str(currency or "").strip().upper()
+    book = str(base or "HKD").strip().upper()
+    if code == "HKD" and book == "HKD":
+        return _rate(rates, "HKD") or 1.0
+    if code == "USD" and book == "USD":
+        return 1.0
+    per_hkd = 1.0 if code == "HKD" else _rate(rates, code)
+    if per_hkd is None:
+        return None
+    if book == "HKD":
+        return per_hkd
+    per_usd = _rate(rates, "USD")
+    if per_usd is None:
+        return None
+    return per_hkd / per_usd
 
 
 def _bar(bars: dict[str, list[Bar]], ticker: str, day: str) -> Bar | None:
@@ -849,9 +881,17 @@ def _sized_order(
         confidence=signal.confidence,
         stop_distance_pct=_stop_distance(strategy, series, price),
     )
+    fx_to_base = _fx(spec.currency, rates, base)
+    if fx_to_base is None:
+        log.warning(
+            "skip missing_fx ticker=%s ccy=%s fx_fallback=skip",
+            signal.ticker,
+            spec.currency,
+        )
+        return None
     decision = size_quantity(
         price_local=price,
-        fx_to_base=_fx(spec.currency, rates, base),
+        fx_to_base=fx_to_base,
         strategy_budget=weight * nav,
         order_budget=min(nav * 0.05, 200_000) / 1.02,
         ticker_budget=0.095 * nav,
@@ -893,7 +933,9 @@ def _adr_order(
             ),
             None,
         )
-    twd_per_usd = rates["USD"] / rates["TWD"] if rates.get("TWD") else None
+    usd = _rate(rates, "USD")
+    twd = _rate(rates, "TWD")
+    twd_per_usd = (usd / twd) if usd and twd else None
     verdict = consider_adr(
         strategy_id=str(strategy.get("id")),
         local_ticker=signal.ticker,

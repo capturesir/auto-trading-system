@@ -34,8 +34,14 @@ def describe(ticker: str, *, odd_lot_enabled: bool = False) -> InstrumentSpec:
     if ticker.endswith(".T"):
         symbol = ticker[: -len(".T")]
         return InstrumentSpec(ticker, "JP", "JPY", 100, 100, symbol, "TSEJ", "XTKS")
-    if ticker.endswith(".KS") or ticker.endswith(".KQ"):
+    if ticker.endswith(".KS") or ticker.endswith(".KQ") or _bare_korea(ticker):
         symbol = ticker.split(".")[0]
-        # Paper Gateway 2026-10-06: 005930 / KRX / KRW -> conId 17382528. KSE is error 200.
+        # Paper Gateway 2026-10-06: 005930 / KRX / KRW -> conId 17382528.
+        # A bare six-digit code is the same local symbol. SMART+USD and KSE are error 200.
         return InstrumentSpec(ticker, "KR", "KRW", 1, 1, symbol, "KRX", "XKRX")
     return InstrumentSpec(ticker, "US", "USD", 1, 1, ticker.replace("-", " "), "SMART", "XNYS")
+
+
+def _bare_korea(ticker: str) -> bool:
+    """IB local codes such as ``005930`` have no Yahoo suffix."""
+    return len(ticker) == 6 and ticker.isdigit()

@@ -30,7 +30,7 @@ from auto_trading.backtest.allocator import (
     allocate,
 )
 from auto_trading.backtest.engine import Bar, BtSignal, plan_session
-from auto_trading.execution.fx import load_rates
+from auto_trading.execution.fx import currencies_for_tickers, fill_missing_rates, load_rates
 from auto_trading.execution.strategy_book import (
     REPO_ROOT,
     load_approved,
@@ -81,6 +81,7 @@ def run_session(
     bar_getter: Callable[[str], str] | None = None,
     sleep: Callable[[float], None] | None = None,
     pin_path: Path | None = None,
+    fx_getter: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
     """Write one paper intent file per confirmed strategy that can run.
 
@@ -126,7 +127,11 @@ def run_session(
     usable = _drop_missing_bars(signals, bars, warnings)
     priority, price_divisor, name_room = _allocator_rules(home)
     adr_map = _adr_map(home)
-    rates = load_rates(home, account if isinstance(account, dict) else None)
+    rates = fill_missing_rates(
+        load_rates(home, account if isinstance(account, dict) else None),
+        currencies_for_tickers(row.ticker for row in usable),
+        getter=fx_getter,
+    )
     market_ok = market_trigger_supported()
     folder = approved_dir or _approved_dir(home)
     pins = load_confirmed_spec_hashes(_pin_path(home, pin_path))
@@ -475,6 +480,9 @@ def _prepare_strategy(
             now=now,
         )
         return "unsupported_trigger"
+    except KeyError as exc:
+        log.warning("skip %s missing_fx key=%s", strategy_id, exc)
+        return "missing_fx"
     return document, actual, orders
 
 
