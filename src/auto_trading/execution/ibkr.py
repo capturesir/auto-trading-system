@@ -603,6 +603,7 @@ class PaperGateway:
                     }
                 )
             from auto_trading.execution.fills import read_ib_executions
+            from auto_trading.execution.fx import account_base_currency
             from auto_trading.execution.fx_convert import cash_by_currency
 
             try:
@@ -622,6 +623,9 @@ class PaperGateway:
             balances = cash_by_currency(values)
             if balances is not None:
                 snapshot["cash_by_ccy"] = balances
+            base = account_base_currency(values)
+            if base:
+                snapshot["base_currency"] = base
             return snapshot
         finally:
             self.disconnect()
@@ -629,8 +633,9 @@ class PaperGateway:
     async def convert_cash(self, plan: Any, *, account: str) -> dict[str, float] | None:
         """Sell USD for ``plan.target_ccy`` and wait until that cash covers the buy.
 
-        An IdealPro pair is a market FX order. Anything else, including KRW
-        and TWD, is an IBKR cash conversion. A rejected or unconfirmed fill
+        IdealPro pairs are market FX orders. TWD and KRW are refused here:
+        mode A does not place FXCONV, IdealPro, or any other standalone
+        conversion into those currencies. A rejected or unconfirmed fill
         returns None so the equity order is not sent. A working order with
         the same ref is not placed again.
         """
@@ -640,9 +645,14 @@ class PaperGateway:
             fx_rejected,
             fx_still_working,
             ib_order_spec,
+            standalone_fx_forbidden,
         )
         from auto_trading.paper_only import port_accepted
 
+        target = str(getattr(plan, "target_ccy", "") or "")
+        if standalone_fx_forbidden(target):
+            log.warning("refusing standalone FX for %s", target.strip().upper())
+            return None
         if not port_accepted(self.settings.ibkr_port):
             return None
         await self.connect()
@@ -687,6 +697,11 @@ class PaperGateway:
     def _place_fx(self, ib: Any, spec: dict[str, Any]) -> None:
         from ib_async import Contract, Order
 
+        from auto_trading.execution.fx_convert import standalone_fx_forbidden
+
+        if standalone_fx_forbidden(str(spec.get("currency") or "")):
+            log.warning("refusing standalone FX for %s", spec.get("currency"))
+            return
         contract = Contract()
         contract.secType = spec["secType"]
         contract.symbol = spec["symbol"]

@@ -166,9 +166,15 @@ class GateContext:
     anomaly_breaker: bool = False
     notify_failure: bool = False
     # Per-currency settled cash. None means the snapshot did not say.
-    # ``fx_cash_check`` is set only on the paper path when preconvert is on.
+    # ``fx_cash_check`` is the HKD/JPY IdealPro preconvert flag.
+    # Taiwan and Korea buys are gated even when that flag is off.
+    # ``broker_cash_by_ccy`` is the unmodified snapshot. Reservations for
+    # orders already sent in this pass stay on ``cash_by_ccy`` only.
     cash_by_ccy: dict[str, float] | None = None
+    broker_cash_by_ccy: dict[str, float] | None = None
     fx_cash_check: bool = False
+    account_base: str | None = None
+    fx_attempt: Any = None
 
 
 class RiskGate:
@@ -188,6 +194,7 @@ class RiskGate:
 
 def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
     """Return the first failing rule code, or None when the order may proceed."""
+    ctx.fx_attempt = None
     code = _r0(intent, ctx)
     if code:
         return code
@@ -253,6 +260,7 @@ def evaluate(intent: OrderIntent, ctx: GateContext) -> str | None:
         price = _price(intent, ctx)
         if price and abs(price / ctx.approval_price - 1) > ctx.reapproval_deviation:
             return "REAPPROVAL_REQUIRED"
+    ctx.fx_attempt = None
     fx_code = _r31(intent, ctx)
     if fx_code:
         return fx_code
@@ -531,24 +539,35 @@ def _opening_rules(intent: OrderIntent, ctx: GateContext, market: str) -> str | 
 
 
 def _r31(intent: OrderIntent, ctx: GateContext) -> str | None:
-    """Block a paper buy that would debit the settlement currency.
+    """Foreign-buy cash gate.
 
-    Off unless this context was built with the preconvert check. A covered
-    balance, a USD buy, and any reduce or exit pass. A shortfall stays R31
-    until a conversion has updated ``cash_by_ccy``.
+    HKD and JPY use IdealPro only when ``fx_cash_check`` is on. A shortfall
+    there stays ``R31`` until a conversion updates ``cash_by_ccy``.
+
+    TWD and KRW always use mode A on a paper opening buy. Enough target cash
+    passes. A shortfall with the auto-FX flag off is
+    ``R31_TWKR_AUTO_FX_UNVERIFIED``. USD and allowed HKD that cannot cover
+    the estimate, or a missing rate, is ``R7_BASE_CASH``. Negative target
+    cash is ``fx_target_cash_deficit``. None of those paths place an FX order.
+    Sells, exits, and protective stops do not enter this gate.
     """
-    if not ctx.fx_cash_check:
+    from auto_trading.execution.fx_convert import assess, opening_twkr_buy, twkr_gate_code
+
+    twkr = opening_twkr_buy(intent)
+    if not ctx.fx_cash_check and not twkr:
         return None
     if intent.mode != "paper" or intent.live_size_multiplier is not None:
         return None
-    from auto_trading.execution.fx_convert import assess
-
     attempt = assess(
         intent,
         cash_by_ccy=ctx.cash_by_ccy,
         open_orders=ctx.open_orders,
         fx_to_base=ctx.fx_to_base,
+        broker_cash=ctx.broker_cash_by_ccy,
     )
+    ctx.fx_attempt = attempt
+    if twkr:
+        return twkr_gate_code(attempt)
     if attempt.action in {"convert", "block"}:
         return "R31"
     return None

@@ -39,6 +39,7 @@ def _ready(
     fx: dict[str, float] | None = None,
     cash: float | None = None,
     include_cash: bool = False,
+    cash_by_ccy: dict[str, float] | None = None,
 ) -> None:
     monkeypatch.setenv("IBKR_PAPER_ACCOUNT", PIN)
     write_risk_limits(home, build_risk_limits(now=at, nlv=nlv, account=PIN))
@@ -52,6 +53,8 @@ def _ready(
         snapshot["fx_to_base"] = fx
     if include_cash:
         snapshot["cash"] = cash
+    if cash_by_ccy is not None:
+        snapshot["cash_by_ccy"] = cash_by_ccy
     account_once(home, at, snapshot=snapshot)
     if not (home / "strategies").exists():
         shutil.copytree(ROOT / "strategies", home / "strategies")
@@ -385,7 +388,12 @@ def test_p2_p3_p4_one_lots_pass_once_fx_is_in_hkd(
     for name, ticker, market, currency, qty, lot, price, valid_from, nlv in cases:
         home = tmp_path / name
         home.mkdir()
-        _ready(home, monkeypatch, at=HK, nlv=nlv)
+        local_cash = None
+        if currency == "KRW":
+            local_cash = {"KRW": 50_000_000.0, "USD": 0.0}
+        elif currency == "TWD":
+            local_cash = {"TWD": 50_000_000.0, "USD": 0.0}
+        _ready(home, monkeypatch, at=HK, nlv=nlv, cash_by_ccy=local_cash)
         _quote(home, HK, ticker, last=price)
         _write(
             home,

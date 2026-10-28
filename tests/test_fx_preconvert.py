@@ -24,6 +24,7 @@ from auto_trading.execution.fx_convert import (
     FX_BUFFER_BPS,
     FX_COMMISSION_BPS,
     MIN_FX_FEE_USD,
+    FxOrder,
     assess,
     await_target_cash,
     cash_by_currency,
@@ -32,6 +33,7 @@ from auto_trading.execution.fx_convert import (
     ib_order_spec,
     required_target_cash,
     usd_for_shortfall,
+    venue_for,
 )
 from auto_trading.execution.ibkr import PaperGateway
 from auto_trading.execution.services import account_once, submit_once
@@ -142,8 +144,9 @@ def test_cash_parser_prefers_cash_balance_and_keeps_debits() -> None:
     assert cash_by_currency([{"tag": "NetLiquidation", "currency": "USD", "value": "1"}]) is None
 
 
-def test_idealpro_versus_cash_conversion_order_shape() -> None:
+def test_idealpro_versus_cash_conversion_order_shape(monkeypatch: pytest.MonkeyPatch) -> None:
     rates = _rates()
+    monkeypatch.delenv("TWKR_AUTO_FX_VERIFIED", raising=False)
     krw = assess(_buy(), cash_by_ccy={"USD": 10_000.0, "KRW": 0.0}, fx_to_base=rates)
     twd = assess(
         _buy(
@@ -167,19 +170,17 @@ def test_idealpro_versus_cash_conversion_order_shape() -> None:
         cash_by_ccy={"USD": 10_000.0},
         fx_to_base=rates,
     )
-    assert krw.action == "convert" and krw.order is not None
-    assert twd.action == "convert" and twd.order is not None
-    assert krw.order.venue == "FXCONV" and krw.order.order_type == "FXCONV"
-    assert twd.order.venue == "FXCONV"
+    assert krw.action == "block" and krw.reason == "auto_fx_unverified" and krw.order is None
+    assert twd.action == "block" and twd.reason == "auto_fx_unverified" and twd.order is None
     assert hkd.order is not None and hkd.order.venue == "IDEALPRO" and hkd.order.order_type == "MKT"
     assert jpy.order is not None and jpy.order.venue == "IDEALPRO"
-    spec = ib_order_spec(krw.order, PIN)
+    spec = ib_order_spec(hkd.order, PIN)
     assert spec["symbol"] == "USD"
-    assert spec["currency"] == "KRW"
+    assert spec["currency"] == "HKD"
     assert spec["action"] == "SELL"
     assert spec["exchange"] == "IDEALPRO"
+    assert spec["orderType"] == "MKT"
     assert spec["secType"] == "CASH"
-    assert spec["totalQuantity"] == pytest.approx(55.74)
     assert spec["account"] == PIN
     usd = assess(
         _buy(symbol="AAPL", currency="USD", market="US", quantity=1, limit_price=100.0),
@@ -326,8 +327,10 @@ def test_account_snapshot_stores_cash_by_ccy(tmp_path: Path, monkeypatch) -> Non
 def test_gate_blocks_only_when_the_check_is_on(tmp_path: Path) -> None:
     intent = _buy()
     pinned = {"approved_hash": intent.spec_hash}
+    # Taiwan/Korea cash gate runs even when IdealPro preconvert is off.
     off = _ctx(tmp_path, ASIA, ["005930.KS"], cash_by_ccy={"USD": 0.0, "KRW": 0.0}, **pinned)
-    assert RiskGate(off).allow(intent) is None
+    with pytest.raises(RiskRejected, match="R7_BASE_CASH"):
+        RiskGate(off).allow(intent)
     short = _ctx(
         tmp_path,
         ASIA,
@@ -336,7 +339,7 @@ def test_gate_blocks_only_when_the_check_is_on(tmp_path: Path) -> None:
         fx_cash_check=True,
         **pinned,
     )
-    with pytest.raises(RiskRejected, match="R31"):
+    with pytest.raises(RiskRejected, match="R7_BASE_CASH"):
         RiskGate(short).allow(intent)
     covered = _ctx(
         tmp_path,
@@ -347,6 +350,21 @@ def test_gate_blocks_only_when_the_check_is_on(tmp_path: Path) -> None:
         **pinned,
     )
     assert RiskGate(covered).allow(intent) is None
+    hk = _hk_buy()
+    hk_off = _ctx(tmp_path, ASIA, ["0700.HK"], cash_by_ccy={"USD": 0.0, "HKD": 0.0}, **pinned)
+    hk_off.quotes["0700.HK"] = Quote(last=10.0, as_of=ASIA, received_at=ASIA, market_data_type=1)
+    assert RiskGate(hk_off).allow(hk) is None
+    hk_on = _ctx(
+        tmp_path,
+        ASIA,
+        ["0700.HK"],
+        cash_by_ccy={"USD": 10.0, "HKD": 0.0},
+        fx_cash_check=True,
+        **pinned,
+    )
+    hk_on.quotes["0700.HK"] = Quote(last=10.0, as_of=ASIA, received_at=ASIA, market_data_type=1)
+    with pytest.raises(RiskRejected, match="R31"):
+        RiskGate(hk_on).allow(hk)
 
 
 def _submit(
@@ -386,9 +404,30 @@ def test_short_usd_sends_no_fx_and_no_equity(tmp_path: Path, monkeypatch) -> Non
     assert result["sent"] == 0
     assert placed == []
     assert fx == []
-    assert "R31" in result["rejected"]
+    assert "R7_BASE_CASH" in result["rejected"]
+    assert "R31" not in result["rejected"]
     log = (tmp_path / "state" / "fx_conversions.jsonl").read_text(encoding="utf-8")
     assert "usd_short" in log
+    assert "FXCONV" not in log
+
+
+def _hk_buy() -> OrderIntent:
+    return _buy(
+        symbol="0700.HK",
+        currency="HKD",
+        market="HK",
+        quantity=1000,
+        limit_price=10.0,
+        lot_size=1000,
+        client_id="cid-hk",
+        intent_id="intent-hk",
+    )
+
+
+def _hk_ctx(home: Path, **cash: float) -> GateContext:
+    ctx = _ctx(home, ASIA, ["0700.HK"], cash_by_ccy=dict(cash))
+    ctx.quotes["0700.HK"] = Quote(last=10.0, as_of=ASIA, received_at=ASIA, market_data_type=1)
+    return ctx
 
 
 def test_unconfirmed_fx_sends_no_equity(tmp_path: Path, monkeypatch) -> None:
@@ -398,22 +437,25 @@ def test_unconfirmed_fx_sends_no_equity(tmp_path: Path, monkeypatch) -> None:
 
     def convert(order, _intent):
         seen.append(order)
-        return {"KRW": 1.0, "USD": 9_000.0}
+        return {"HKD": 1.0, "USD": 9_000.0}
 
     result = _submit(
         tmp_path,
         ASIA,
-        [_buy()],
-        _ctx(tmp_path, ASIA, ["005930.KS"], cash_by_ccy={"USD": 10_000.0, "KRW": 0.0}),
+        [_hk_buy()],
+        _hk_ctx(tmp_path, USD=10_000.0, HKD=0.0),
         placed,
         convert,
     )
     assert result["sent"] == 0
     assert placed == []
     assert len(seen) == 1
+    assert seen[0].venue == "IDEALPRO"
+    assert seen[0].target_ccy == "HKD"
     assert "R31" in result["rejected"]
     text = (tmp_path / "state" / "fx_conversions.jsonl").read_text(encoding="utf-8")
     assert "unconfirmed" in text
+    assert "FXCONV" not in text
 
 
 def test_confirmed_fx_then_allows_the_equity(tmp_path: Path, monkeypatch) -> None:
@@ -423,26 +465,28 @@ def test_confirmed_fx_then_allows_the_equity(tmp_path: Path, monkeypatch) -> Non
 
     def convert(order, _intent):
         seen.append(order)
-        return {"KRW": order.required_target + 10, "USD": 9_000.0}
+        return {"HKD": order.required_target + 10, "USD": 9_000.0}
 
-    intent = _buy()
     result = _submit(
         tmp_path,
         ASIA,
-        [intent],
-        _ctx(tmp_path, ASIA, ["005930.KS"], cash_by_ccy={"USD": 10_000.0, "KRW": 0.0}),
+        [_hk_buy()],
+        _hk_ctx(tmp_path, USD=10_000.0, HKD=0.0),
         placed,
         convert,
     )
     assert result["sent"] == 1
-    assert [row.symbol for row in placed] == ["005930.KS"]
+    assert [row.symbol for row in placed] == ["0700.HK"]
     assert len(seen) == 1
     spec = ib_order_spec(seen[0], PIN)
-    assert spec["orderType"] == "FXCONV"
+    assert spec["orderType"] == "MKT"
+    assert spec["venue"] == "IDEALPRO"
     assert spec["action"] == "SELL"
-    assert spec["currency"] == "KRW"
+    assert spec["currency"] == "HKD"
+    assert spec["orderType"] != "FXCONV"
     text = (tmp_path / "state" / "fx_conversions.jsonl").read_text(encoding="utf-8")
     assert "confirmed" in text
+    assert "FXCONV" not in text
 
 
 def test_enough_target_cash_skips_conversion(tmp_path: Path, monkeypatch) -> None:
@@ -462,19 +506,36 @@ def test_enough_target_cash_skips_conversion(tmp_path: Path, monkeypatch) -> Non
     assert placed[0].symbol == "005930.KS"
 
 
-def test_flag_off_does_not_block_a_foreign_buy(tmp_path: Path, monkeypatch) -> None:
+def test_flag_off_does_not_block_hk_and_still_gates_krw(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("TRADING_FX_PRECONVERT", raising=False)
+    monkeypatch.delenv("TWKR_AUTO_FX_VERIFIED", raising=False)
+    hk_home = tmp_path / "hk"
+    kr_home = tmp_path / "kr"
+    hk_home.mkdir()
+    kr_home.mkdir()
     placed: list[OrderIntent] = []
-    result = _submit(
-        tmp_path,
+    hk = _submit(
+        hk_home,
         ASIA,
-        [_buy()],
-        _ctx(tmp_path, ASIA, ["005930.KS"], cash_by_ccy={"USD": 0.0, "KRW": 0.0}),
+        [_hk_buy()],
+        _hk_ctx(hk_home, USD=0.0, HKD=0.0),
         placed,
         lambda order, _intent: (_ for _ in ()).throw(AssertionError(order)),
     )
-    assert result["sent"] == 1
-    assert placed[0].currency == "KRW"
+    assert hk["sent"] == 1
+    assert placed[0].currency == "HKD"
+    placed.clear()
+    kr = _submit(
+        kr_home,
+        ASIA,
+        [_buy()],
+        _ctx(kr_home, ASIA, ["005930.KS"], cash_by_ccy={"USD": 0.0, "KRW": 0.0}),
+        placed,
+        lambda order, _intent: (_ for _ in ()).throw(AssertionError(order)),
+    )
+    assert kr["sent"] == 0
+    assert placed == []
+    assert "R7_BASE_CASH" in kr["rejected"]
 
 
 def test_second_buy_sees_the_reserved_balance(tmp_path: Path, monkeypatch) -> None:
@@ -547,8 +608,8 @@ def test_convert_cash_confirms_without_reentering_the_loop(
     """Cash shows up after a yield. ib.sleep must not run inside this loop.
 
     The paper failure was RuntimeError from ib.sleep/util.run while
-    convert_cash was already running under asyncio.run. TWD stays FXCONV
-    and JPY stays an IdealPro market order.
+    convert_cash was already running under asyncio.run. TWD/KRW never
+    place FXCONV or IdealPro. JPY stays an IdealPro market order.
     """
 
     class FakeIB:
@@ -612,17 +673,43 @@ def test_convert_cash_confirms_without_reentering_the_loop(
         ),
         cash_by_ccy={"USD": 10_000.0, "TWD": 0.0},
         fx_to_base=_rates(),
+        verified=True,
     )
-    assert twd.order is not None and twd.order.venue == "FXCONV"
-    confirmed = asyncio.run(gateway.convert_cash(twd.order, account=PIN))
-    assert confirmed is not None
-    assert confirmed["TWD"] + 1e-6 >= twd.order.required_target
+    assert twd.action == "covered" and twd.reason == "auto_fx" and twd.order is None
+    with pytest.raises(ValueError, match="retired"):
+        venue_for("TWD")
+    with pytest.raises(ValueError, match="retired"):
+        venue_for("KRW")
+    forbidden = FxOrder(
+        target_ccy="TWD",
+        usd_qty=15.0,
+        required_target=1_000.0,
+        order_type="FXCONV",
+        exchange="IDEALPRO",
+        action="SELL",
+        symbol="USD",
+        sec_type="CASH",
+        tif="DAY",
+        order_ref="fx-twd",
+        venue="FXCONV",
+    )
+    assert asyncio.run(gateway.convert_cash(forbidden, account=PIN)) is None
+    krw_fx = FxOrder(
+        target_ccy="KRW",
+        usd_qty=15.0,
+        required_target=1_000.0,
+        order_type="MKT",
+        exchange="IDEALPRO",
+        action="SELL",
+        symbol="USD",
+        sec_type="CASH",
+        tif="DAY",
+        order_ref="fx-krw",
+        venue="IDEALPRO",
+    )
+    assert asyncio.run(gateway.convert_cash(krw_fx, account=PIN)) is None
+    assert placed == []
     assert fake.sleep_calls == 0
-    assert placed[0]["orderType"] == "FXCONV"
-    assert placed[0]["currency"] == "TWD"
-    assert placed[0]["exchange"] == "IDEALPRO"
-    assert placed[0]["action"] == "SELL"
-    assert placed[0]["symbol"] == "USD"
 
     fake.filled = False
     jpy = assess(
@@ -643,6 +730,8 @@ def test_convert_cash_confirms_without_reentering_the_loop(
     assert confirmed_jpy is not None
     assert confirmed_jpy["JPY"] + 1e-6 >= jpy.order.required_target
     assert fake.sleep_calls == 0
-    assert placed[1]["orderType"] == "MKT"
-    assert placed[1]["currency"] == "JPY"
-    assert placed[1]["venue"] == "IDEALPRO"
+    assert placed[0]["orderType"] == "MKT"
+    assert placed[0]["currency"] == "JPY"
+    assert placed[0]["venue"] == "IDEALPRO"
+    assert all(row.get("currency") not in {"TWD", "KRW"} for row in placed)
+    assert all(row.get("orderType") != "FXCONV" for row in placed)

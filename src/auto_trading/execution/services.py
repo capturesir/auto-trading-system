@@ -84,8 +84,9 @@ _OPENING = frozenset({"ENTRY", "ADD"})
 # Permanent opening rejects. Every other gate code stays pending and is retried.
 # R1 order notional, R2 order cap, R3 position, R4 market, R5 currency, R6 gross.
 # LOT_TOO_LARGE is one lot above the unscaled order cap.
-# R7 cash cover, R31 target-currency cash, and R9_HALF_SIZE_LIMIT can clear
-# later, so they are not listed.
+# R7 cash cover, R31 IdealPro cash, R7_BASE_CASH, R31_TWKR_AUTO_FX_UNVERIFIED,
+# fx_target_cash_deficit, and R9_HALF_SIZE_LIMIT can clear later, so they are
+# not listed. BASE_CCY_NOT_USD is retired and is not a reject.
 # Missing or unparseable valid_from is stored as INTENT_EXPIRED before the gate.
 # An exit, reduce, or protective stop is never terminal because of a gate code.
 _PERMANENT_REJECTS = frozenset(
@@ -533,6 +534,9 @@ def account_once(
     cash_map = parse_cash_map(data.get("cash_by_ccy")) if "cash_by_ccy" in data else None
     if cash_map is not None:
         payload["cash_by_ccy"] = cash_map
+    raw_base = data.get("base_currency")
+    if isinstance(raw_base, str) and raw_base.strip():
+        payload["base_currency"] = raw_base.strip().upper()
     fx_raw = data.get("fx_to_base")
     if isinstance(fx_raw, dict) and fx_raw:
         from auto_trading.execution.fx import store_rates
@@ -541,6 +545,13 @@ def account_once(
         payload["fx_to_base"] = fx_saved
         store_rates(home, fx_saved)
     _write_json(home / "state" / "account.json", payload)
+    if cash_map is not None:
+        try:
+            from auto_trading.execution.fx_convert import note_target_cash_deficits
+
+            note_target_cash_deficits(home, cash_map, now.isoformat(timespec="seconds"))
+        except Exception as exc:
+            log.warning("target cash deficit note failed: %s", type(exc).__name__)
     executions = data.get("executions")
     if isinstance(executions, list):
         from auto_trading.execution.fills import write_execution_snapshot
@@ -1097,9 +1108,16 @@ def _cover_foreign_buy(
     A missing converter, a short USD balance, or a balance that never prints
     leaves ``cash_by_ccy`` unchanged so the gate still refuses the equity.
     """
-    from auto_trading.execution.fx_convert import assess, record_fx_attempt, trade_currency
+    from auto_trading.execution.fx_convert import (
+        assess,
+        record_fx_attempt,
+        standalone_fx_forbidden,
+        trade_currency,
+    )
 
     if not ctx.fx_cash_check:
+        return
+    if standalone_fx_forbidden(trade_currency(intent)):
         return
     attempt = assess(
         intent,
@@ -1123,6 +1141,19 @@ def _cover_foreign_buy(
             )
         return
     order = attempt.order
+    if order is not None and standalone_fx_forbidden(order.target_ccy):
+        record_fx_attempt(
+            home,
+            intent_id=key,
+            symbol=intent.symbol,
+            status="fx_forbidden",
+            when=stamp,
+            target_ccy=order.target_ccy,
+            usd_qty=order.usd_qty,
+            required_target=order.required_target,
+            detail="TWD/KRW standalone FX is retired",
+        )
+        return
     if convert is None:
         record_fx_attempt(
             home,
@@ -1528,7 +1559,13 @@ def _production_context(
     from auto_trading.execution.fx_convert import fx_preconvert_enabled, parse_cash_map
 
     fx_cash_check = fx_preconvert_enabled()
-    cash_by_ccy = parse_cash_map(account.get("cash_by_ccy")) if fx_cash_check else None
+    raw_cash = account.get("cash_by_ccy")
+    cash_by_ccy = parse_cash_map(raw_cash) if isinstance(raw_cash, dict) else None
+    broker_cash = dict(cash_by_ccy) if cash_by_ccy is not None else None
+    raw_base = account.get("base_currency")
+    account_base = (
+        str(raw_base).strip().upper() if isinstance(raw_base, str) and raw_base.strip() else None
+    )
     recon_ok = True
     recon_path = home / "state" / "recon.json"
     if recon_path.is_file():
@@ -1560,7 +1597,9 @@ def _production_context(
         fx_to_base=fx,
         quotes=quotes,
         cash_by_ccy=cash_by_ccy,
+        broker_cash_by_ccy=broker_cash,
         fx_cash_check=fx_cash_check,
+        account_base=account_base,
     )
 
 
@@ -1761,11 +1800,18 @@ def _record_once(
     code: str,
     intent_id: str,
     now: datetime,
+    detail: dict[str, Any] | None = None,
 ) -> None:
     start, end, _day = risk_window(now)
     if journal.has_risk_check(intent_id, code, start=start, end=end):
         return
-    journal.record_risk_check(symbol=symbol, code=code, intent_id=intent_id, when=now)
+    journal.record_risk_check(
+        symbol=symbol,
+        code=code,
+        intent_id=intent_id,
+        when=now,
+        detail=detail,
+    )
 
 
 def _close_intent(
@@ -1907,6 +1953,51 @@ def _queue_destinations(home: Path, retired: set[Path], kept: set[Path]) -> None
         path.replace(dest)
 
 
+def _note_twkr(home: Path, intent: OrderIntent, ctx: GateContext, now: datetime) -> dict[str, Any]:
+    """Record a mode-A decision. Does not place an FX order."""
+    from auto_trading.execution.fx_convert import (
+        record_fx_attempt,
+        trade_currency,
+        twkr_auto_fx_verified,
+        twkr_detail,
+        twkr_gate_code,
+        warn_if_base_not_usd,
+        write_fx_cash_gate,
+    )
+
+    attempt = ctx.fx_attempt
+    verified = twkr_auto_fx_verified()
+    detail = twkr_detail(
+        attempt,
+        phase=ctx.stage,
+        account_base=ctx.account_base,
+        verified=verified,
+    )
+    stamp = now.isoformat(timespec="seconds")
+    cash = ctx.broker_cash_by_ccy if ctx.broker_cash_by_ccy is not None else ctx.cash_by_ccy
+    write_fx_cash_gate(
+        home,
+        now=stamp,
+        reason=twkr_gate_code(attempt),
+        verified=verified,
+        cash=cash,
+        detail=detail,
+    )
+    warn_if_base_not_usd(home, ctx.account_base, stamp)
+    record_fx_attempt(
+        home,
+        intent_id=intent.intent_id or intent.client_id,
+        symbol=intent.symbol,
+        status=str(attempt.reason or attempt.action),
+        when=stamp,
+        target_ccy=trade_currency(intent),
+        usd_qty=attempt.usd_qty,
+        required_target=attempt.required_target,
+        detail=str(attempt.reason or ""),
+    )
+    return detail
+
+
 def submit_once(
     home: Path,
     now: datetime,
@@ -1928,13 +2019,22 @@ def submit_once(
     is not retired by a gate rejection. ``mode`` other than paper, and any
     size multiplier, never reach the broker.
 
-    When ``TRADING_FX_PRECONVERT=1``, a BUY that settles in a currency other
-    than USD is converted from USD first. R31 still blocks the equity order
-    when that cash is short or the conversion is not confirmed.
+    When ``TRADING_FX_PRECONVERT=1``, a BUY that settles in HKD, JPY, or
+    another IdealPro currency is converted from USD first. R31 still blocks
+    that equity order when the cash is short or the conversion is not
+    confirmed. TWD and KRW never take that path: mode A sends the stock when
+    target cash covers, or when ``TWKR_AUTO_FX_VERIFIED=1`` and USD plus
+    allowed HKD cover the estimate. Otherwise the order stays queued.
     """
     from auto_trading.execution.approvals import queue_order
     from auto_trading.execution.fills import sync_fills
-    from auto_trading.execution.fx_convert import fx_preconvert_enabled, reserve_target
+    from auto_trading.execution.fx_convert import (
+        fx_preconvert_enabled,
+        note_target_cash_deficits,
+        opening_twkr_buy,
+        reserve_funding,
+        reserve_target,
+    )
     from auto_trading.risk.gate import evaluate
 
     try:
@@ -1944,6 +2044,12 @@ def submit_once(
         fill_report = {"recorded": [], "skipped": [], "unmatched": []}
     is_readonly = read_only_api() if readonly is None else readonly
     if is_readonly:
+        try:
+            held = _account(home).get("cash_by_ccy")
+            if isinstance(held, dict):
+                note_target_cash_deficits(home, held, now.isoformat(timespec="seconds"))
+        except Exception as exc:
+            log.warning("target cash deficit note failed: %s", type(exc).__name__)
         payload = {
             "status": "readonly",
             "sent": 0,
@@ -1973,6 +2079,18 @@ def submit_once(
         and os.environ.get("TRADING_GATEWAY_CONNECT", "").strip() == "1"
     ):
         converter = _gateway_convert
+    if context.broker_cash_by_ccy is None and isinstance(context.cash_by_ccy, dict):
+        context.broker_cash_by_ccy = {
+            str(name).upper(): float(amount) for name, amount in context.cash_by_ccy.items()
+        }
+    try:
+        note_target_cash_deficits(
+            home,
+            context.broker_cash_by_ccy,
+            now.isoformat(timespec="seconds"),
+        )
+    except Exception as exc:
+        log.warning("target cash deficit note failed: %s", type(exc).__name__)
     sent = 0
     skipped = 0
     gated: list[str] = []
@@ -2042,7 +2160,10 @@ def submit_once(
         _bind_approved_hash(context, intent)
         gated.append(intent.symbol)
         code = evaluate(intent, context)
-        if code == "R31":
+        decision_detail = None
+        if opening_twkr_buy(intent) and context.fx_attempt is not None:
+            decision_detail = _note_twkr(home, intent, context, now)
+        if code == "R31" and not opening_twkr_buy(intent):
             _cover_foreign_buy(home, intent, context, converter, now)
             code = evaluate(intent, context)
         blocked = intent.mode != "paper" or intent.live_size_multiplier is not None
@@ -2051,7 +2172,14 @@ def submit_once(
             reducing = intent.intent_type in {"REDUCE", "EXIT"} or intent.reduce_only
             reducing = reducing or intent.protective
             if reducing or reason not in _PERMANENT_REJECTS:
-                _record_once(journal, symbol=intent.symbol, code=reason, intent_id=key, now=now)
+                _record_once(
+                    journal,
+                    symbol=intent.symbol,
+                    code=reason,
+                    intent_id=key,
+                    now=now,
+                    detail=decision_detail,
+                )
                 if source is not None:
                     kept.add(source)
                 if reducing and not _block_all_r10(intent, reason, now):
@@ -2122,8 +2250,12 @@ def submit_once(
             rejected.append("error")
             continue
         _remember_sent(context, intent)
-        if context.fx_cash_check and isinstance(context.cash_by_ccy, dict):
+        if isinstance(context.cash_by_ccy, dict) and (
+            context.fx_cash_check or opening_twkr_buy(intent)
+        ):
             context.cash_by_ccy = reserve_target(context.cash_by_ccy, intent)
+            if context.fx_attempt is not None:
+                reserve_funding(context.cash_by_ccy, context.fx_attempt)
         if source is not None:
             kept.add(source)
         sent += 1
