@@ -1,5 +1,7 @@
 # 常駐服務
 
+新機器從空白系統安裝，用 `scripts/ats-install.sh`、`deploy/from-scratch.md` 和 `deploy/packaging.md`。那條路徑把 Python 服務放進 Compose，Gateway 仍呼叫本目錄的 `ibgw-start.sh`。它不會改已經在跑的機器。
+
 生產環境只啟用下面這些單元，使用者是 `trader`，不要用 root。長駐行程用 `Restart=always`。一次性行程由 timer 叫起，不設 `Restart=always`，否則會和 timer 疊在一起空轉。單元檔不放登入名稱或密碼。
 
 啟用：

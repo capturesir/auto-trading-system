@@ -1,0 +1,23 @@
+[Unit]
+Description=Paper IB Gateway via IBC
+After=network-online.target ibkr-port-guard.service
+Wants=network-online.target ibkr-port-guard.service
+
+[Service]
+Type=simple
+User=ibgw
+Group=ibgw
+UMask=0077
+RuntimeDirectory=ibgateway
+RuntimeDirectoryMode=0700
+WorkingDirectory=/var/lib/ibgw
+Environment=HOME=/var/lib/ibgw
+LoadCredentialEncrypted=ibkr-paper-username:/etc/credstore.encrypted/ibkr-paper-username
+LoadCredentialEncrypted=ibkr-paper-password:/etc/credstore.encrypted/ibkr-paper-password
+ExecStart=/usr/local/lib/ibgw/ibgw-start.sh
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

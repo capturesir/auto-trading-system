@@ -1,0 +1,158 @@
+name: ats-paper
+
+x-build: &build
+  image: ats-paper:local
+  build:
+    context: ../..
+    dockerfile: deploy/compose/Dockerfile
+  env_file:
+    - path: .env
+      required: false
+  network_mode: host
+  restart: unless-stopped
+  init: true
+  working_dir: /srv/trading
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-env: &env
+  TRADING_HOME: /srv/trading
+  IB_HOST: "127.0.0.1"
+  IB_PORT: "4002"
+  IBKR_PAPER_ACCOUNT: ${IBKR_PAPER_ACCOUNT:-}
+  ATS_UID: ${ATS_UID:-1000}
+  ATS_GID: ${ATS_GID:-1000}
+  CHRONY_GID: ${CHRONY_GID:-}
+  SIGNALS_PATH: /srv/trading/signals.json
+
+x-volumes: &volumes
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/state:/srv/trading/state
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/data:/srv/trading/data
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/logs:/srv/trading/logs
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/intents:/srv/trading/intents
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/reports:/srv/trading/reports
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/alerts:/srv/trading/alerts
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/backups:/srv/trading/backups
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/approvals:/srv/trading/approvals
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/notifications:/srv/trading/notifications
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/exports:/srv/trading/exports
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/signals_archive:/srv/trading/signals_archive
+  - ${ATS_DATA_ROOT:-/srv/trading-data}/signals.json:/srv/trading/signals.json
+
+services:
+  account:
+    <<: *build
+    environment:
+      <<: *env
+      IB_CLIENT_ID: "13"
+      TRADING_GATEWAY_CONNECT: "1"
+    volumes: *volumes
+    command: ["python", "-m", "auto_trading.execution", "account"]
+
+  oms:
+    <<: *build
+    environment:
+      <<: *env
+    volumes: *volumes
+    command: ["python", "-m", "auto_trading.execution", "oms"]
+
+  recon:
+    <<: *build
+    environment:
+      <<: *env
+      IB_CLIENT_ID: "12"
+    volumes: *volumes
+    command: ["python", "-m", "auto_trading.execution", "recon"]
+
+  watchdog:
+    <<: *build
+    init: false
+    pid: host
+    cap_add:
+      - SYS_ADMIN
+    environment:
+      <<: *env
+      IB_CLIENT_ID: "14"
+      TRADING_GATEWAY_CONNECT: "1"
+    volumes:
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/state:/srv/trading/state
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/data:/srv/trading/data
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/logs:/srv/trading/logs
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/intents:/srv/trading/intents
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/reports:/srv/trading/reports
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/alerts:/srv/trading/alerts
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/backups:/srv/trading/backups
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/approvals:/srv/trading/approvals
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/notifications:/srv/trading/notifications
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/exports:/srv/trading/exports
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/signals_archive:/srv/trading/signals_archive
+      - ${ATS_DATA_ROOT:-/srv/trading-data}/signals.json:/srv/trading/signals.json
+      - /run/chrony:/run/chrony:ro
+      - /run/systemd:/run/systemd
+      - /run/dbus:/run/dbus
+    command: ["python", "-m", "auto_trading.execution", "watchdog"]
+
+  submit:
+    <<: *build
+    environment:
+      <<: *env
+      IB_CLIENT_ID: "11"
+      IB_READ_ONLY_API: ${IB_READ_ONLY_API:-yes}
+      TRADING_GATEWAY_CONNECT: "1"
+    volumes: *volumes
+    command: ["python", "-m", "auto_trading.execution", "submit"]
+
+  strategy:
+    <<: *build
+    environment:
+      <<: *env
+    volumes: *volumes
+    command: ["/srv/trading/deploy/compose/timer-loop.sh", "strategy"]
+
+  summary:
+    <<: *build
+    environment:
+      <<: *env
+    volumes: *volumes
+    command: ["/srv/trading/deploy/compose/timer-loop.sh", "summary"]
+
+  pool:
+    <<: *build
+    environment:
+      <<: *env
+    volumes: *volumes
+    command: ["/srv/trading/deploy/compose/timer-loop.sh", "pool"]
+
+  sync:
+    <<: *build
+    environment:
+      <<: *env
+    volumes: *volumes
+    command: ["/srv/trading/deploy/compose/timer-loop.sh", "sync"]
+
+  holdings:
+    <<: *build
+    profiles: ["optional"]
+    environment:
+      <<: *env
+      IB_CLIENT_ID_HOLDINGS: "15"
+      IB_READ_ONLY: "1"
+      HOLDINGS_MONITOR_INTERVAL_SEC: "30"
+    volumes: *volumes
+    command: ["python", "-m", "auto_trading.alerts.holdings_monitor"]
+
+  reeval:
+    <<: *build
+    profiles: ["optional"]
+    environment:
+      <<: *env
+      IB_CLIENT_ID_REEVAL: "16"
+      IB_READ_ONLY: "1"
+      INTRADAY_REEVAL_WRITE_INTENTS: "0"
+      INTRADAY_REEVAL_WRITE_EXITS: "0"
+      INTRADAY_REEVAL_INCLUDE_VALID_BUYS: "1"
+    volumes: *volumes
+    command: ["/srv/trading/deploy/compose/timer-loop.sh", "reeval"]
