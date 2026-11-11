@@ -1,0 +1,20 @@
+html, body {
+  font-family: "Noto Sans CJK TC", "Noto Sans CJK HK", "Noto Sans CJK JP", sans-serif;
+  font-size: 12pt;
+  line-height: 1.45;
+}
+
+code, pre {
+  font-family: "DejaVu Sans Mono", "Noto Sans Mono CJK TC", monospace;
+  font-size: 0.85em;
+}
+
+table {
+  border-collapse: collapse;
+}
+
+td, th {
+  border: 1px solid #ccc;
+  padding: 0.3em 0.5em;
+  vertical-align: top;
+}

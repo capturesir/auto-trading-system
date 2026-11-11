@@ -28,7 +28,7 @@ settings = {
     # Sunday 18:30 HKT = 10:30 UTC (after 01:00 US/Eastern): weekly full re-login (cold restart)
     "ColdRestartTime": "10:30",
 }
-header = """# IBC config TEMPLATE for IB Gateway (PAPER ONLY) on trading-paper-sgp1.
+header = """# IBC config TEMPLATE for IB Gateway (PAPER ONLY).
 # NO CREDENTIALS IN THIS FILE. The placeholders __IBKR_PAPER_USERNAME__ and
 # __IBKR_PAPER_PASSWORD__ are filled at service start by /usr/local/lib/ibgw/ibgw-start.sh
 # from systemd encrypted credentials (LoadCredentialEncrypted). The rendered file is kept only in

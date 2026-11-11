@@ -1,0 +1,13 @@
+[Unit]
+Description=Drop non-loopback broker API packets
+After=network-pre.target systemd-modules-load.service
+Before=ibgateway.service
+Wants=systemd-modules-load.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/ibkr-port-guard
+
+[Install]
+WantedBy=multi-user.target
